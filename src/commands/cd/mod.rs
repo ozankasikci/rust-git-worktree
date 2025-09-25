@@ -3,6 +3,8 @@ use std::process::Command;
 use color_eyre::eyre::{self, WrapErr};
 use owo_colors::{OwoColorize, Stream};
 
+pub(crate) const SHELL_OVERRIDE_ENV: &str = "RSWORKTREE_SHELL";
+
 use crate::Repo;
 
 #[derive(Debug)]
@@ -72,7 +74,7 @@ impl CdCommand {
 }
 
 fn shell_command() -> (String, Vec<String>) {
-    if let Ok(override_shell) = std::env::var("GIT_WORKTREE_HELPER_SHELL") {
+    if let Ok(override_shell) = std::env::var(SHELL_OVERRIDE_ENV) {
         if !override_shell.trim().is_empty() {
             return (override_shell, Vec::new());
         }
@@ -140,7 +142,7 @@ mod tests {
 
         let create = CreateCommand::new("feature/test".into());
         unsafe {
-            std::env::set_var("GIT_WORKTREE_HELPER_SHELL", "env");
+            std::env::set_var(SHELL_OVERRIDE_ENV, "env");
         }
         create.execute(&repo)?;
 

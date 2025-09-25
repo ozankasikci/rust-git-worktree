@@ -47,7 +47,7 @@ fn ls_command_lists_created_worktrees() -> Result<(), Box<dyn Error>> {
     for name in ["feature/test", "bugfix/fix"] {
         Command::cargo_bin("rsworktree")?
             .current_dir(repo_dir.path())
-            .env("GIT_WORKTREE_HELPER_SHELL", "env")
+            .env("RSWORKTREE_SHELL", "env")
             .args(["create", name])
             .assert()
             .success();

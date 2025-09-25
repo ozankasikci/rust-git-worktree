@@ -46,7 +46,7 @@ fn cd_command_prints_worktree_path() -> Result<(), Box<dyn Error>> {
 
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
-        .env("GIT_WORKTREE_HELPER_SHELL", "env")
+        .env("RSWORKTREE_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success();
@@ -74,14 +74,14 @@ fn cd_command_spawns_shell_in_worktree() -> Result<(), Box<dyn Error>> {
 
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
-        .env("GIT_WORKTREE_HELPER_SHELL", "env")
+        .env("RSWORKTREE_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success();
 
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
-        .env("GIT_WORKTREE_HELPER_SHELL", "env")
+        .env("RSWORKTREE_SHELL", "env")
         .args(["cd", "feature/test"])
         .assert()
         .success()

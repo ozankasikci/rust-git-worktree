@@ -124,7 +124,7 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::Repo;
+    use crate::{Repo, commands::cd::SHELL_OVERRIDE_ENV};
 
     fn init_git_repo(dir: &TempDir) -> color_eyre::Result<()> {
         run(dir, ["git", "init"])?;
@@ -169,7 +169,7 @@ mod tests {
 
         let repo = Repo::discover_from(dir.path())?;
         unsafe {
-            std::env::set_var("GIT_WORKTREE_HELPER_SHELL", "env");
+            std::env::set_var(SHELL_OVERRIDE_ENV, "env");
         }
         let command = CreateCommand::new("feature/test".into());
         command.execute(&repo)?;

@@ -46,7 +46,7 @@ fn create_command_creates_worktree_and_updates_gitignore() -> Result<(), Box<dyn
 
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
-        .env("GIT_WORKTREE_HELPER_SHELL", "env")
+        .env("RSWORKTREE_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success()
@@ -77,7 +77,7 @@ fn create_command_reuses_existing_branch() -> Result<(), Box<dyn Error>> {
 
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
-        .env("GIT_WORKTREE_HELPER_SHELL", "env")
+        .env("RSWORKTREE_SHELL", "env")
         .args(["create", "feature/existing"])
         .assert()
         .success();
