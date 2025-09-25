@@ -1,11 +1,12 @@
 [package]
-name = "git-worktree-helper"
+name = "rsworktree"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 color-eyre = "0.6"
+owo-colors = { version = "4.0", features = ["supports-colors"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"

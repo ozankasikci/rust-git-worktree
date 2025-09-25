@@ -5,6 +5,7 @@ use std::{
 };
 
 use color_eyre::eyre::{self, WrapErr};
+use owo_colors::{OwoColorize, Stream};
 
 use crate::Repo;
 
@@ -16,13 +17,38 @@ impl ListCommand {
         let worktrees_dir = repo.ensure_worktrees_dir()?;
         let worktrees = find_worktrees(&worktrees_dir)?;
 
-        println!("Worktrees under `{}`:", worktrees_dir.display());
+        let header_path_raw = format!("{}", worktrees_dir.display());
+        let header_path = format!(
+            "{}",
+            header_path_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue().bold()) })
+        );
+        let header_raw = format!("Worktrees under `{}`:", header_path);
+        let header = format!(
+            "{}",
+            header_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| format!("{}", text.bold()))
+        );
+        println!("{}", header);
 
         if worktrees.is_empty() {
-            println!("(none)");
+            let message = format!(
+                "{}",
+                "(none)".if_supports_color(Stream::Stdout, |text| { format!("{}", text.dimmed()) })
+            );
+            println!("{}", message);
         } else {
             for worktree in worktrees {
-                println!("- {}", format_worktree(&worktree));
+                let entry_raw = format_worktree(&worktree);
+                let entry = format!(
+                    "{}",
+                    entry_raw
+                        .as_str()
+                        .if_supports_color(Stream::Stdout, |text| { format!("{}", text.green()) })
+                );
+                println!("- {}", entry);
             }
         }
 

@@ -2,7 +2,9 @@ use std::{fs, process::Command};
 
 use color_eyre::eyre::{self, Context};
 
-use crate::Repo;
+use owo_colors::{OwoColorize, Stream};
+
+use crate::{Repo, commands::cd::CdCommand};
 
 #[derive(Debug)]
 pub struct CreateCommand {
@@ -19,12 +21,20 @@ impl CreateCommand {
         let worktree_path = worktrees_dir.join(&self.name);
 
         if worktree_path.exists() {
+            let name = format!(
+                "{}",
+                self.name
+                    .as_str()
+                    .if_supports_color(Stream::Stdout, |text| {
+                        format!("{}", text.cyan().bold())
+                    })
+            );
             println!(
                 "Worktree `{}` already exists at `{}`.",
-                self.name,
+                name,
                 worktree_path.display()
             );
-            return Ok(());
+            return self.enter_worktree(repo);
         }
 
         if let Some(parent) = worktree_path.parent() {
@@ -54,14 +64,39 @@ impl CreateCommand {
             ));
         }
 
-        println!(
-            "Created worktree `{}` at `{}` under `{}`.",
-            self.name,
-            worktree_path.display(),
-            worktrees_dir.display()
+        let name = format!(
+            "{}",
+            self.name
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| {
+                    format!("{}", text.green().bold())
+                })
+        );
+        let path_raw = format!("{}", worktree_path.display());
+        let path = format!(
+            "{}",
+            path_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue()) })
+        );
+        let parent_raw = format!("{}", worktrees_dir.display());
+        let parent = format!(
+            "{}",
+            parent_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue()))
         );
 
-        Ok(())
+        println!(
+            "Created worktree `{}` at `{}` under `{}`.",
+            name, path, parent
+        );
+
+        self.enter_worktree(repo)
+    }
+
+    fn enter_worktree(&self, repo: &Repo) -> color_eyre::Result<()> {
+        CdCommand::new(self.name.clone(), false).execute(repo)
     }
 }
 
@@ -133,6 +168,9 @@ mod tests {
         init_git_repo(&dir)?;
 
         let repo = Repo::discover_from(dir.path())?;
+        unsafe {
+            std::env::set_var("GIT_WORKTREE_HELPER_SHELL", "env");
+        }
         let command = CreateCommand::new("feature/test".into());
         command.execute(&repo)?;
 

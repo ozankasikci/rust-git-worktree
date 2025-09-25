@@ -45,14 +45,15 @@ fn ls_command_lists_created_worktrees() -> Result<(), Box<dyn Error>> {
     init_git_repo(repo_dir.path())?;
 
     for name in ["feature/test", "bugfix/fix"] {
-        Command::cargo_bin("git-worktree-helper")?
+        Command::cargo_bin("rsworktree")?
             .current_dir(repo_dir.path())
+            .env("GIT_WORKTREE_HELPER_SHELL", "env")
             .args(["create", name])
             .assert()
             .success();
     }
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .arg("ls")
         .assert()
@@ -71,7 +72,7 @@ fn ls_command_shows_none_when_empty() -> Result<(), Box<dyn Error>> {
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .arg("ls")
         .assert()

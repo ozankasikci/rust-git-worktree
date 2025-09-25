@@ -44,8 +44,9 @@ fn cd_command_prints_worktree_path() -> Result<(), Box<dyn Error>> {
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
+        .env("GIT_WORKTREE_HELPER_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success();
@@ -56,7 +57,7 @@ fn cd_command_prints_worktree_path() -> Result<(), Box<dyn Error>> {
         .join("feature/test")
         .canonicalize()?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .args(["cd", "feature/test", "--print"])
         .assert()
@@ -71,13 +72,14 @@ fn cd_command_spawns_shell_in_worktree() -> Result<(), Box<dyn Error>> {
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
+        .env("GIT_WORKTREE_HELPER_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success();
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .env("GIT_WORKTREE_HELPER_SHELL", "env")
         .args(["cd", "feature/test"])
@@ -97,7 +99,7 @@ fn cd_command_fails_for_missing_worktree() -> Result<(), Box<dyn Error>> {
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .args(["cd", "missing", "--print"])
         .assert()

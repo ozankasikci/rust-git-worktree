@@ -44,8 +44,9 @@ fn create_command_creates_worktree_and_updates_gitignore() -> Result<(), Box<dyn
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
+        .env("GIT_WORKTREE_HELPER_SHELL", "env")
         .args(["create", "feature/test"])
         .assert()
         .success()
@@ -74,8 +75,9 @@ fn create_command_reuses_existing_branch() -> Result<(), Box<dyn Error>> {
 
     run(repo_dir.path(), ["git", "branch", "feature/existing"])?;
 
-    Command::cargo_bin("git-worktree-helper")?
+    Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
+        .env("GIT_WORKTREE_HELPER_SHELL", "env")
         .args(["create", "feature/existing"])
         .assert()
         .success();

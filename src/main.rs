@@ -1,4 +1,4 @@
-use git_worktree_helper::cli;
+use rsworktree::cli;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;

@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use color_eyre::eyre::{self, WrapErr};
+use owo_colors::{OwoColorize, Stream};
 
 use crate::Repo;
 
@@ -32,11 +33,32 @@ impl CdCommand {
             .wrap_err_with(|| eyre::eyre!("failed to resolve `{}`", worktree_path.display()))?;
 
         if self.print_only {
-            println!("{}", canonical.display());
+            let path_raw = format!("{}", canonical.display());
+            let path = format!(
+                "{}",
+                path_raw
+                    .as_str()
+                    .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue()) })
+            );
+            println!("{}", path);
             return Ok(());
         }
 
-        println!("Spawning shell at `{}`...", canonical.display());
+        let path_raw = format!("{}", canonical.display());
+        let path = format!(
+            "{}",
+            path_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue().bold()) })
+        );
+        let message_raw = format!("Spawning shell at `{}`...", path);
+        let message = format!(
+            "{}",
+            message_raw
+                .as_str()
+                .if_supports_color(Stream::Stdout, |text| format!("{}", text.bold()))
+        );
+        println!("{}", message);
         let (program, args) = shell_command();
         let mut cmd = Command::new(program);
         cmd.args(args);
@@ -117,6 +139,9 @@ mod tests {
         let repo = Repo::discover_from(dir.path())?;
 
         let create = CreateCommand::new("feature/test".into());
+        unsafe {
+            std::env::set_var("GIT_WORKTREE_HELPER_SHELL", "env");
+        }
         create.execute(&repo)?;
 
         let command = CdCommand::new("feature/test".into(), true);

@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Parser, Debug)]
-#[command(name = "git-worktree-helper", version, about = "Manage Git worktrees more easily", long_about = None)]
+#[command(name = "rsworktree", version, about = "Manage Git worktrees more easily", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     command: Commands,
