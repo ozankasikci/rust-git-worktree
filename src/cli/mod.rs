@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     Repo,
-    commands::{create::CreateCommand, list::ListCommand},
+    commands::{cd::CdCommand, create::CreateCommand, list::ListCommand},
 };
 
 #[derive(Parser, Debug)]
@@ -18,12 +18,23 @@ enum Commands {
     Create(CreateArgs),
     /// List worktrees managed in `.rsworktree`.
     Ls,
+    /// Open a shell in the given worktree.
+    Cd(CdArgs),
 }
 
 #[derive(Parser, Debug)]
 struct CreateArgs {
     /// Name of the worktree (also used as the branch name)
     name: String,
+}
+
+#[derive(Parser, Debug)]
+struct CdArgs {
+    /// Name of the worktree to enter
+    name: String,
+    /// Only print the resolved path instead of spawning a shell
+    #[arg(long)]
+    print: bool,
 }
 
 pub fn run() -> color_eyre::Result<()> {
@@ -37,6 +48,10 @@ pub fn run() -> color_eyre::Result<()> {
         }
         Commands::Ls => {
             let command = ListCommand::default();
+            command.execute(&repo)?;
+        }
+        Commands::Cd(args) => {
+            let command = CdCommand::new(args.name, args.print);
             command.execute(&repo)?;
         }
     }
