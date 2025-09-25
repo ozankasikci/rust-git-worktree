@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 
-use crate::{Repo, commands::create::CreateCommand};
+use crate::{
+    Repo,
+    commands::{create::CreateCommand, list::ListCommand},
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "git-worktree-helper", version, about = "Manage Git worktrees more easily", long_about = None)]
@@ -13,6 +16,8 @@ pub struct Cli {
 enum Commands {
     /// Create a worktree under the repo-local `.rsworktree` directory.
     Create(CreateArgs),
+    /// List worktrees managed in `.rsworktree`.
+    Ls,
 }
 
 #[derive(Parser, Debug)]
@@ -28,6 +33,10 @@ pub fn run() -> color_eyre::Result<()> {
     match cli.command {
         Commands::Create(args) => {
             let command = CreateCommand::new(args.name);
+            command.execute(&repo)?;
+        }
+        Commands::Ls => {
+            let command = ListCommand::default();
             command.execute(&repo)?;
         }
     }
