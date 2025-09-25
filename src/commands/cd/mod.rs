@@ -73,7 +73,7 @@ impl CdCommand {
     }
 }
 
-fn shell_command() -> (String, Vec<String>) {
+pub(crate) fn shell_command() -> (String, Vec<String>) {
     if let Ok(override_shell) = std::env::var(SHELL_OVERRIDE_ENV) {
         if !override_shell.trim().is_empty() {
             return (override_shell, Vec::new());

@@ -81,3 +81,27 @@ fn ls_command_shows_none_when_empty() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+fn ls_command_works_from_inside_worktree() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/nested"])
+        .assert()
+        .success();
+
+    let worktree_path = repo_dir.path().join(".rsworktree").join("feature/nested");
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(&worktree_path)
+        .arg("ls")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("feature/nested"));
+
+    Ok(())
+}

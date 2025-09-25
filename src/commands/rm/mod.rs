@@ -3,7 +3,10 @@ use std::{fs, process::Command};
 use color_eyre::eyre::{self, Context};
 use owo_colors::{OwoColorize, Stream};
 
-use crate::Repo;
+use crate::{Repo, commands::cd::shell_command};
+
+#[cfg(test)]
+use crate::commands::cd::SHELL_OVERRIDE_ENV;
 
 #[derive(Debug)]
 pub struct RemoveCommand {
@@ -33,6 +36,8 @@ impl RemoveCommand {
         }
 
         let worktree_path = worktrees_dir.join(&self.name);
+        let worktree_path = fs::canonicalize(&worktree_path).unwrap_or(worktree_path);
+
         if !worktree_path.exists() {
             let name = format!(
                 "{}",
@@ -66,15 +71,6 @@ impl RemoveCommand {
             ));
         }
 
-        if worktree_path.exists() {
-            fs::remove_dir_all(&worktree_path).wrap_err_with(|| {
-                eyre::eyre!(
-                    "failed to clean up worktree directory `{}`",
-                    worktree_path.display()
-                )
-            })?;
-        }
-
         let name = format!(
             "{}",
             self.name
@@ -87,6 +83,42 @@ impl RemoveCommand {
             worktrees_dir.display()
         );
 
+        let need_reposition = match std::env::current_dir() {
+            Ok(dir) => {
+                let canonical = fs::canonicalize(&dir).unwrap_or(dir.clone());
+                canonical.starts_with(&worktree_path)
+            }
+            Err(_) => true,
+        };
+
+        if need_reposition {
+            std::env::set_current_dir(repo.root()).wrap_err_with(|| {
+                eyre::eyre!(
+                    "failed to change directory to repository root `{}`",
+                    repo.root().display()
+                )
+            })?;
+
+            let root_raw = format!("{}", repo.root().display());
+            let root_display = format!(
+                "{}",
+                root_raw
+                    .as_str()
+                    .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue().bold()))
+            );
+            println!("Now in root `{}`.", root_display);
+
+            let (program, args) = shell_command();
+            let status = Command::new(program)
+                .args(args)
+                .status()
+                .wrap_err("failed to spawn root shell")?;
+
+            if !status.success() {
+                return Err(eyre::eyre!("subshell exited with a non-zero status"));
+            }
+        }
+
         Ok(())
     }
 }
@@ -98,7 +130,7 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::Repo;
+    use crate::{Repo, commands::create::CreateCommand};
 
     fn init_git_repo(dir: &TempDir) -> color_eyre::Result<()> {
         run(dir, ["git", "init"])?;
@@ -144,6 +176,36 @@ mod tests {
 
         let command = RemoveCommand::new("feature/test".into(), false);
         command.execute(&repo)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn removing_current_worktree_repositions_to_root() -> color_eyre::Result<()> {
+        let original_dir = std::env::current_dir()?;
+        let dir = TempDir::new()?;
+        init_git_repo(&dir)?;
+        let repo = Repo::discover_from(dir.path())?;
+
+        unsafe {
+            std::env::set_var(SHELL_OVERRIDE_ENV, "env");
+        }
+        let create = CreateCommand::new("feature/local".into(), None);
+        create.execute(&repo)?;
+
+        let worktree_path = repo.worktrees_dir().join("feature/local");
+        std::env::set_current_dir(&worktree_path)?;
+
+        let command = RemoveCommand::new("feature/local".into(), false);
+        command.execute(&repo)?;
+
+        let new_cwd = std::env::current_dir()?;
+        assert_eq!(new_cwd, repo.root());
+
+        std::env::set_current_dir(original_dir)?;
+        unsafe {
+            std::env::remove_var(SHELL_OVERRIDE_ENV);
+        }
 
         Ok(())
     }

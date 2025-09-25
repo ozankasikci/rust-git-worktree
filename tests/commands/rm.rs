@@ -94,3 +94,34 @@ fn rm_command_handles_missing_worktree() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+fn rm_command_spawns_root_shell_when_called_inside_worktree() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/move-back"])
+        .assert()
+        .success();
+
+    let worktree_path = repo_dir
+        .path()
+        .join(".rsworktree")
+        .join("feature/move-back");
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(&worktree_path)
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["rm", "feature/move-back"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "PWD={}",
+            repo_dir.path().display()
+        )));
+
+    Ok(())
+}

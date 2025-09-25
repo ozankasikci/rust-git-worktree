@@ -22,11 +22,13 @@ impl Repo {
     }
 
     pub fn discover_from<P: AsRef<Path>>(path: P) -> color_eyre::Result<Self> {
+        let path = path.as_ref();
+
         let output = Command::new("git")
-            .current_dir(path.as_ref())
-            .args(["rev-parse", "--show-toplevel"])
+            .current_dir(path)
+            .args(["rev-parse", "--git-common-dir"])
             .output()
-            .wrap_err("failed to run `git rev-parse --show-toplevel`")?;
+            .wrap_err("failed to run `git rev-parse --git-common-dir`")?;
 
         if !output.status.success() {
             return Err(eyre::eyre!(
@@ -35,14 +37,29 @@ impl Repo {
             ));
         }
 
-        let path_str = String::from_utf8(output.stdout)
-            .wrap_err("invalid UTF-8 in git root path")?
+        let git_dir_raw = String::from_utf8(output.stdout)
+            .wrap_err("invalid UTF-8 in git common dir path")?
             .trim()
             .to_owned();
 
-        Ok(Self {
-            root: PathBuf::from(path_str),
-        })
+        let git_dir_path = PathBuf::from(&git_dir_raw);
+        let git_dir_abs = if git_dir_path.is_absolute() {
+            git_dir_path
+        } else {
+            fs::canonicalize(path.join(&git_dir_path)).unwrap_or_else(|_| path.join(git_dir_raw))
+        };
+
+        let root = git_dir_abs
+            .parent()
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "failed to determine repository root from `{}`",
+                    git_dir_abs.display()
+                )
+            })?
+            .to_path_buf();
+
+        Ok(Self { root })
     }
 
     pub fn root(&self) -> &Path {
