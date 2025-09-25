@@ -4,3 +4,5 @@ mod cd;
 mod create;
 #[path = "commands/list.rs"]
 mod list;
+#[path = "commands/rm.rs"]
+mod rm;

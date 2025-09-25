@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     Repo,
-    commands::{cd::CdCommand, create::CreateCommand, list::ListCommand},
+    commands::{cd::CdCommand, create::CreateCommand, list::ListCommand, rm::RemoveCommand},
 };
 
 #[derive(Parser, Debug)]
@@ -20,6 +20,8 @@ enum Commands {
     Ls,
     /// Open a shell in the given worktree.
     Cd(CdArgs),
+    /// Remove a worktree tracked in `.rsworktree`.
+    Rm(RmArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -40,6 +42,15 @@ struct CdArgs {
     print: bool,
 }
 
+#[derive(Parser, Debug)]
+struct RmArgs {
+    /// Name of the worktree to remove
+    name: String,
+    /// Force removal even if the worktree has uncommitted changes
+    #[arg(long)]
+    force: bool,
+}
+
 pub fn run() -> color_eyre::Result<()> {
     let cli = Cli::parse();
     let repo = Repo::discover()?;
@@ -55,6 +66,10 @@ pub fn run() -> color_eyre::Result<()> {
         }
         Commands::Cd(args) => {
             let command = CdCommand::new(args.name, args.print);
+            command.execute(&repo)?;
+        }
+        Commands::Rm(args) => {
+            let command = RemoveCommand::new(args.name, args.force);
             command.execute(&repo)?;
         }
     }
