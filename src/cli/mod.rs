@@ -26,6 +26,9 @@ enum Commands {
 struct CreateArgs {
     /// Name of the worktree (also used as the branch name)
     name: String,
+    /// Branch to base the new worktree branch on
+    #[arg(long)]
+    base: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -43,7 +46,7 @@ pub fn run() -> color_eyre::Result<()> {
 
     match cli.command {
         Commands::Create(args) => {
-            let command = CreateCommand::new(args.name);
+            let command = CreateCommand::new(args.name, args.base);
             command.execute(&repo)?;
         }
         Commands::Ls => {

@@ -140,7 +140,7 @@ mod tests {
         init_git_repo(&dir)?;
         let repo = Repo::discover_from(dir.path())?;
 
-        let create = CreateCommand::new("feature/test".into());
+        let create = CreateCommand::new("feature/test".into(), None);
         unsafe {
             std::env::set_var(SHELL_OVERRIDE_ENV, "env");
         }

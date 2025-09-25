@@ -96,3 +96,29 @@ fn create_command_reuses_existing_branch() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+fn create_command_accepts_branch_option() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/from-main", "--base", "main"])
+        .assert()
+        .success();
+
+    let feature_rev = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["rev-parse", "feature/from-main"])
+        .output()?;
+    let main_rev = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["rev-parse", "main"])
+        .output()?;
+
+    assert_eq!(feature_rev.stdout, main_rev.stdout);
+
+    Ok(())
+}

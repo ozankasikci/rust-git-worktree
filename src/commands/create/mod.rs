@@ -9,16 +9,19 @@ use crate::{Repo, commands::cd::CdCommand};
 #[derive(Debug)]
 pub struct CreateCommand {
     name: String,
+    base: Option<String>,
 }
 
 impl CreateCommand {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn new(name: String, base: Option<String>) -> Self {
+        Self { name, base }
     }
 
     pub fn execute(&self, repo: &Repo) -> color_eyre::Result<()> {
         let worktrees_dir = repo.ensure_worktrees_dir()?;
         let worktree_path = worktrees_dir.join(&self.name);
+        let target_branch = self.name.as_str();
+        let base_branch = self.base.as_deref();
 
         if worktree_path.exists() {
             let name = format!(
@@ -43,7 +46,7 @@ impl CreateCommand {
             })?;
         }
 
-        let branch_exists = branch_exists(repo, &self.name)?;
+        let branch_exists = branch_exists(repo, target_branch)?;
 
         let mut cmd = Command::new("git");
         cmd.current_dir(repo.root());
@@ -51,9 +54,12 @@ impl CreateCommand {
         cmd.arg(&worktree_path);
 
         if branch_exists {
-            cmd.arg(&self.name);
+            cmd.arg(target_branch);
         } else {
-            cmd.args(["-b", &self.name]);
+            cmd.args(["-b", target_branch]);
+            if let Some(base) = base_branch {
+                cmd.arg(base);
+            }
         }
 
         let status = cmd.status().wrap_err("failed to run `git worktree add`")?;
@@ -66,11 +72,9 @@ impl CreateCommand {
 
         let name = format!(
             "{}",
-            self.name
-                .as_str()
-                .if_supports_color(Stream::Stdout, |text| {
-                    format!("{}", text.green().bold())
-                })
+            target_branch.if_supports_color(Stream::Stdout, |text| {
+                format!("{}", text.green().bold())
+            })
         );
         let path_raw = format!("{}", worktree_path.display());
         let path = format!(
@@ -87,10 +91,23 @@ impl CreateCommand {
                 .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue()))
         );
 
-        println!(
-            "Created worktree `{}` at `{}` under `{}`.",
-            name, path, parent
-        );
+        if let Some(base) = base_branch {
+            let base = format!(
+                "{}",
+                base.if_supports_color(Stream::Stdout, |text| {
+                    format!("{}", text.magenta().bold())
+                })
+            );
+            println!(
+                "Created worktree `{}` at `{}` under `{}` from `{}`.",
+                name, path, parent, base
+            );
+        } else {
+            println!(
+                "Created worktree `{}` at `{}` under `{}`.",
+                name, path, parent
+            );
+        }
 
         self.enter_worktree(repo)
     }
@@ -171,7 +188,7 @@ mod tests {
         unsafe {
             std::env::set_var(SHELL_OVERRIDE_ENV, "env");
         }
-        let command = CreateCommand::new("feature/test".into());
+        let command = CreateCommand::new("feature/test".into(), None);
         command.execute(&repo)?;
 
         let expected_dir = repo.worktrees_dir().join("feature/test");
