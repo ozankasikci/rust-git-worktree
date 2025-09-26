@@ -202,7 +202,7 @@ where
         Ok(())
     }
 
-    fn ensure_pr_metadata_options(&self) -> color_eyre::Result<()> {
+    fn ensure_pr_metadata_options(&mut self) -> color_eyre::Result<()> {
         if self.fill || self.web {
             return Ok(());
         }
@@ -215,9 +215,11 @@ where
             return Ok(());
         }
 
-        Err(eyre::eyre!(
-            "`rsworktree pr-github` runs `gh pr create` in non-interactive mode. Provide PR metadata with `--fill`, `--title/--body`, or use `--web` to open the browser."
-        ))
+        let note = "No PR metadata flags provided; defaulting to `--fill`.";
+        let message = note.if_supports_color(Stream::Stdout, |text| format!("{}", text.yellow()));
+        println!("{}", message);
+        self.fill = true;
+        Ok(())
     }
 }
 
@@ -427,8 +429,58 @@ mod tests {
         fs::create_dir_all(&worktree_path)?;
 
         let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/test\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
         runner.responses.push_back(Ok(CommandOutput {
-            stdout: "feature/test\n".into(),
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
             stderr: String::new(),
             success: true,
             status_code: Some(0),
@@ -507,12 +559,26 @@ mod tests {
         fs::create_dir_all(&worktree_path)?;
 
         let mut runner = MockCommandRunner::default();
-        runner.responses.push_back(Ok(CommandOutput {
-            stdout: "feature/test\n".into(),
-            stderr: String::new(),
-            success: true,
-            status_code: Some(0),
-        }));
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/test\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
         runner.responses.push_back(Ok(CommandOutput {
             stdout: String::new(),
             stderr: String::new(),
@@ -617,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_when_missing_metadata_flags() -> color_eyre::Result<()> {
+    fn defaults_to_fill_when_metadata_missing() -> color_eyre::Result<()> {
         let repo_dir = TempDir::new()?;
         init_git_repo(&repo_dir)?;
         let repo = Repo::discover_from(repo_dir.path())?;
@@ -625,12 +691,26 @@ mod tests {
         fs::create_dir_all(&worktree_path)?;
 
         let mut runner = MockCommandRunner::default();
-        runner.responses.push_back(Ok(CommandOutput {
-            stdout: "feature/test\n".into(),
-            stderr: String::new(),
-            success: true,
-            status_code: Some(0),
-        }));
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/test\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
 
         let mut command = PrGithubCommand::with_runner(
             "feature/test".into(),
@@ -644,19 +724,38 @@ mod tests {
             runner,
         );
 
-        let err = command.execute(&repo).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Provide PR metadata with `--fill`")
-        );
+        command.execute(&repo)?;
 
         assert_eq!(
             command.runner.calls,
-            vec![RecordedCall {
-                program: "git".into(),
-                dir: worktree_path,
-                args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
-            }]
+            vec![
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec![
+                        "push".into(),
+                        "-u".into(),
+                        "origin".into(),
+                        "feature/test".into()
+                    ],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: worktree_path,
+                    args: vec![
+                        "pr".into(),
+                        "create".into(),
+                        "--head".into(),
+                        "feature/test".into(),
+                        "--fill".into(),
+                    ],
+                },
+            ]
         );
 
         Ok(())

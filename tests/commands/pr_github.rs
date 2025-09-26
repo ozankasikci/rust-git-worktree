@@ -172,7 +172,7 @@ fn pr_github_without_name_errors_outside_worktree() -> Result<(), Box<dyn Error>
 }
 
 #[test]
-fn pr_github_requires_metadata_when_noninteractive() -> Result<(), Box<dyn Error>> {
+fn pr_github_defaults_to_fill_when_metadata_missing() -> Result<(), Box<dyn Error>> {
     let repo_dir = TempDir::new()?;
     init_git_repo(repo_dir.path())?;
 
@@ -183,14 +183,24 @@ fn pr_github_requires_metadata_when_noninteractive() -> Result<(), Box<dyn Error
         .assert()
         .success();
 
-    let worktree_path = repo_dir.path().join(".rsworktree").join("feature/test");
+    let worktree_path = repo_dir
+        .path()
+        .join(".rsworktree")
+        .join("feature/test")
+        .canonicalize()?;
+
+    let stub = install_stub_gh()?;
 
     Command::cargo_bin("rsworktree")?
         .current_dir(&worktree_path)
+        .env("PATH", &stub.path_value)
+        .env("GH_LOG", &stub.log_path)
         .args(["pr-github", "--no-push"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("Provide PR metadata"));
+        .success();
+
+    let log_contents = fs::read_to_string(&stub.log_path)?;
+    assert!(log_contents.contains("args:pr create --head feature/test --fill"));
 
     Ok(())
 }
