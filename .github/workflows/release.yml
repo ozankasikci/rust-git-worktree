@@ -49,7 +49,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --features git2/vendored-libgit2,git2/vendored-openssl
 
       - name: Package artifact
         run: |
