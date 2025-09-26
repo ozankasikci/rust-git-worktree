@@ -23,3 +23,13 @@
 ## Environment
 
 Set `RSWORKTREE_SHELL` to override the shell used by `rsworktree cd` (falls back to `$SHELL` or `/bin/sh`).
+
+## Installation
+
+Install from crates.io with:
+
+```bash
+cargo install rsworktree
+```
+
+After the binary is on your `PATH`, run `rsworktree --help` to explore the available commands.

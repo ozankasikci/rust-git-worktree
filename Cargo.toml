@@ -2,6 +2,14 @@
 name = "rsworktree"
 version = "0.1.0"
 edition = "2024"
+description = "CLI helper for managing Git worktrees under a dedicated .rsworktree directory"
+license = "MIT"
+repository = "https://github.com/ozan/rust-git-worktree"
+homepage = "https://github.com/ozan/rust-git-worktree"
+documentation = "https://docs.rs/rsworktree"
+readme = "README.md"
+keywords = ["git", "worktree", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
