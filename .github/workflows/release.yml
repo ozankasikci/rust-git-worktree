@@ -70,4 +70,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.value }}
           files: ${{ steps.package.outputs.artifact }}
           fail_on_unmatched_files: true
-          overwrite: true
+          overwrite_files: true
