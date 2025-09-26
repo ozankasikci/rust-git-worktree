@@ -353,6 +353,53 @@ mod tests {
 
     use tempfile::TempDir;
 
+    #[test]
+    fn metadata_flag_allows_known_noninteractive_values() {
+        for flag in [
+            "--fill",
+            "-f",
+            "--fill-first",
+            "--fill-verbose",
+            "--web",
+            "-w",
+            "--title",
+            "--body",
+            "--body-file",
+            "--title=Ready",
+            "--body=Looks good",
+            "--body-file=notes.md",
+        ] {
+            assert!(
+                metadata_flag_allows_noninteractive(flag),
+                "flag `{flag}` should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_flag_allows_noninteractive_rejects_positional_separator_and_plain_args() {
+        for flag in ["--", "--reviewer", "ready"] {
+            assert!(
+                !metadata_flag_allows_noninteractive(flag),
+                "flag `{flag}` should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn format_command_quotes_arguments_with_special_characters() {
+        let command = format_command(
+            "gh",
+            &[
+                "pr".into(),
+                "create".into(),
+                "--title".into(),
+                "Ready for review".into(),
+            ],
+        );
+        assert_eq!(command, "gh pr create --title 'Ready for review'");
+    }
+
     #[derive(Debug, Default)]
     struct MockCommandRunner {
         responses: VecDeque<color_eyre::Result<CommandOutput>>,
