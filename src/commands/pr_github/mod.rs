@@ -192,6 +192,14 @@ where
 
         let branch_label = format_with_color(branch, |text| format!("{}", text.magenta().bold()));
         println!("GitHub pull request created for `{}`.", branch_label);
+        if let Some(pr_link) = output
+            .stdout
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+        {
+            println!("{}", pr_link);
+        }
         Ok(())
     }
 
