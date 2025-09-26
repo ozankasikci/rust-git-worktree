@@ -1,8 +1,10 @@
-use std::{fs, process::Command};
+use std::fs;
 
 use color_eyre::eyre::{self, Context};
 
 use owo_colors::{OwoColorize, Stream};
+
+use git2::{ErrorCode, WorktreeAddOptions};
 
 use crate::{Repo, commands::cd::CdCommand};
 
@@ -46,29 +48,20 @@ impl CreateCommand {
             })?;
         }
 
-        let branch_exists = branch_exists(repo, target_branch)?;
-
-        let mut cmd = Command::new("git");
-        cmd.current_dir(repo.root());
-        cmd.args(["worktree", "add"]);
-        cmd.arg(&worktree_path);
-
-        if branch_exists {
-            cmd.arg(target_branch);
-        } else {
-            cmd.args(["-b", target_branch]);
-            if let Some(base) = base_branch {
-                cmd.arg(base);
-            }
-        }
-
-        let status = cmd.status().wrap_err("failed to run `git worktree add`")?;
-
-        if !status.success() {
-            return Err(eyre::eyre!(
-                "`git worktree add` exited with status {status}"
-            ));
-        }
+        let git_repo = repo.git();
+        let reference = prepare_branch(git_repo, target_branch, base_branch)?;
+        let metadata_name = worktree_metadata_name(&self.name);
+        let mut opts = WorktreeAddOptions::new();
+        opts.reference(Some(&reference));
+        git_repo
+            .worktree(&metadata_name, &worktree_path, Some(&opts))
+            .wrap_err_with(|| {
+                eyre::eyre!(
+                    "failed to add worktree `{}` at `{}`",
+                    target_branch,
+                    worktree_path.display()
+                )
+            })?;
 
         let name = format!(
             "{}",
@@ -103,27 +96,62 @@ impl CreateCommand {
     }
 }
 
-fn branch_exists(repo: &Repo, branch: &str) -> color_eyre::Result<bool> {
+fn prepare_branch<'repo>(
+    repo: &'repo git2::Repository,
+    branch: &str,
+    base: Option<&str>,
+) -> color_eyre::Result<git2::Reference<'repo>> {
     let full_ref = format!("refs/heads/{branch}");
-    let status = Command::new("git")
-        .current_dir(repo.root())
-        .args(["show-ref", "--verify", "--quiet", &full_ref])
-        .status()
-        .wrap_err("failed to run `git show-ref`")?;
-
-    match status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(eyre::eyre!(
-            "`git show-ref` exited with unexpected status {status}"
-        )),
+    match repo.find_reference(&full_ref) {
+        Ok(reference) => Ok(reference),
+        Err(err) if err.code() == ErrorCode::NotFound => {
+            let base_name = base.unwrap_or("HEAD");
+            let object = repo
+                .revparse_single(base_name)
+                .wrap_err_with(|| eyre::eyre!("failed to resolve base reference `{base_name}`"))?;
+            let commit = object.peel_to_commit().wrap_err_with(|| {
+                eyre::eyre!("base reference `{base_name}` does not point to a commit")
+            })?;
+            let branch = repo.branch(branch, &commit, false).wrap_err_with(|| {
+                eyre::eyre!("failed to create branch `{branch}` from `{base_name}`")
+            })?;
+            Ok(branch.into_reference())
+        }
+        Err(err) => Err(eyre::eyre!("failed to look up branch `{branch}`: {err}")),
     }
+}
+
+fn worktree_metadata_name(name: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    let sanitized: String = name
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' => '-',
+            ch if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') => ch,
+            _ => '-',
+        })
+        .collect();
+
+    let mut hasher = DefaultHasher::new();
+    hasher.write(name.as_bytes());
+    let hash = hasher.finish();
+
+    let base = sanitized.trim_matches('-');
+    let trimmed: String = if base.is_empty() {
+        "worktree".into()
+    } else {
+        sanitized.chars().take(48).collect()
+    };
+
+    format!("rsworktree-{trimmed}-{hash:016x}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::{fs, process::Command as StdCommand};
 
     use tempfile::TempDir;
 
@@ -152,7 +180,7 @@ mod tests {
     fn run(dir: &TempDir, cmd: impl IntoIterator<Item = &'static str>) -> color_eyre::Result<()> {
         let mut iter = cmd.into_iter();
         let program = iter.next().expect("command must not be empty");
-        let status = Command::new(program)
+        let status = StdCommand::new(program)
             .current_dir(dir.path())
             .args(iter)
             .status()

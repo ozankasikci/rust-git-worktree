@@ -2,17 +2,23 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use color_eyre::eyre::{self, Context};
+use git2::Repository as GitRepository;
 
 const WORKTREE_IGNORE_ENTRY: &str = ".rsworktree/";
 const WORKTREE_IGNORE_ALT_ENTRY: &str = ".rsworktree";
 
-#[derive(Debug, Clone)]
 pub struct Repo {
+    git: GitRepository,
     root: PathBuf,
+}
+
+impl std::fmt::Debug for Repo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Repo").field("root", &self.root).finish()
+    }
 }
 
 impl Repo {
@@ -22,48 +28,37 @@ impl Repo {
     }
 
     pub fn discover_from<P: AsRef<Path>>(path: P) -> color_eyre::Result<Self> {
-        let path = path.as_ref();
+        let discovered =
+            GitRepository::discover(path.as_ref()).wrap_err("failed to discover git repository")?;
 
-        let output = Command::new("git")
-            .current_dir(path)
-            .args(["rev-parse", "--git-common-dir"])
-            .output()
-            .wrap_err("failed to run `git rev-parse --git-common-dir`")?;
-
-        if !output.status.success() {
-            return Err(eyre::eyre!(
-                "not inside a git repository: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        let git_dir_raw = String::from_utf8(output.stdout)
-            .wrap_err("invalid UTF-8 in git common dir path")?
-            .trim()
-            .to_owned();
-
-        let git_dir_path = PathBuf::from(&git_dir_raw);
-        let git_dir_abs = if git_dir_path.is_absolute() {
-            git_dir_path
-        } else {
-            fs::canonicalize(path.join(&git_dir_path)).unwrap_or_else(|_| path.join(git_dir_raw))
-        };
-
-        let root = git_dir_abs
+        let common_dir = discovered.commondir().to_path_buf();
+        let root = common_dir
             .parent()
             .ok_or_else(|| {
                 eyre::eyre!(
                     "failed to determine repository root from `{}`",
-                    git_dir_abs.display()
+                    common_dir.display()
                 )
             })?
             .to_path_buf();
 
-        Ok(Self { root })
+        let git = if discovered.is_worktree() {
+            GitRepository::open(&root)
+                .or_else(|_| GitRepository::open(common_dir.clone()))
+                .wrap_err("failed to open parent repository for worktree")?
+        } else {
+            discovered
+        };
+
+        Ok(Self { git, root })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn git(&self) -> &GitRepository {
+        &self.git
     }
 
     pub fn worktrees_dir(&self) -> PathBuf {
