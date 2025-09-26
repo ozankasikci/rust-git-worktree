@@ -1,7 +1,9 @@
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 
 use color_eyre::eyre::{self, Context};
 use owo_colors::{OwoColorize, Stream};
+
+use git2::{ErrorCode, WorktreePruneOptions};
 
 use crate::{Repo, commands::cd::shell_command};
 
@@ -53,22 +55,49 @@ impl RemoveCommand {
             return Ok(());
         }
 
-        let mut cmd = Command::new("git");
-        cmd.current_dir(repo.root());
-        cmd.args(["worktree", "remove"]);
+        let git_repo = repo.git();
+        let worktree_name = match find_worktree_name(git_repo, &worktree_path)? {
+            Some(name) => name,
+            None => {
+                let name = format!(
+                    "{}",
+                    self.name
+                        .as_str()
+                        .if_supports_color(Stream::Stdout, |text| format!("{}", text.cyan()))
+                );
+                println!(
+                    "Worktree `{}` does not exist under `{}`.",
+                    name,
+                    worktrees_dir.display()
+                );
+                return Ok(());
+            }
+        };
+
+        let worktree = git_repo.find_worktree(&worktree_name).wrap_err_with(|| {
+            eyre::eyre!("failed to load git worktree metadata for `{}`", self.name)
+        })?;
+
+        let mut prune_opts = WorktreePruneOptions::new();
+        prune_opts.valid(true);
+        prune_opts.working_tree(true);
         if self.force {
-            cmd.arg("--force");
+            prune_opts.locked(true);
         }
-        cmd.arg(&worktree_path);
 
-        let status = cmd
-            .status()
-            .wrap_err("failed to run `git worktree remove`")?;
+        worktree
+            .prune(Some(&mut prune_opts))
+            .wrap_err("failed to remove worktree")?;
 
-        if !status.success() {
-            return Err(eyre::eyre!(
-                "`git worktree remove` exited with status {status}"
-            ));
+        drop(worktree);
+
+        if worktree_path.exists() {
+            fs::remove_dir_all(&worktree_path).wrap_err_with(|| {
+                eyre::eyre!(
+                    "failed to clean worktree directory `{}`",
+                    worktree_path.display()
+                )
+            })?;
         }
 
         let name = format!(
@@ -111,7 +140,8 @@ impl RemoveCommand {
             let (program, args) = shell_command();
             let status = Command::new(&program)
                 .args(args)
-                .env("PWD", repo.root())
+                .current_dir(repo.root())
+                .env("PWD", logical_pwd(repo.root()))
                 .status()
                 .wrap_err("failed to spawn root shell")?;
 
@@ -122,6 +152,50 @@ impl RemoveCommand {
 
         Ok(())
     }
+}
+
+fn find_worktree_name(
+    repo: &git2::Repository,
+    worktree_path: &Path,
+) -> color_eyre::Result<Option<String>> {
+    let target = worktree_path
+        .canonicalize()
+        .unwrap_or_else(|_| worktree_path.to_path_buf());
+
+    let names = repo
+        .worktrees()
+        .wrap_err("failed to list repository worktrees")?;
+
+    for name in names.iter().flatten() {
+        let worktree = match repo.find_worktree(name) {
+            Ok(worktree) => worktree,
+            Err(err) if err.code() == ErrorCode::NotFound => continue,
+            Err(err) => {
+                return Err(eyre::eyre!("failed to open git worktree `{name}`: {err}"));
+            }
+        };
+
+        let path = worktree
+            .path()
+            .canonicalize()
+            .unwrap_or_else(|_| worktree.path().to_path_buf());
+        if path == target {
+            return Ok(Some(name.to_owned()));
+        }
+    }
+
+    Ok(None)
+}
+
+fn logical_pwd(path: &Path) -> std::ffi::OsString {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(stripped) = path.strip_prefix("/private") {
+            return Path::new("/").join(stripped).into_os_string();
+        }
+    }
+
+    path.as_os_str().to_owned()
 }
 
 #[cfg(test)]

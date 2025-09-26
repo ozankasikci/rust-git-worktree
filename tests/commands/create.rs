@@ -1,4 +1,4 @@
-use std::{error::Error, fs, path::Path, process::Command as StdCommand};
+use std::{collections::HashSet, error::Error, fs, path::Path, process::Command as StdCommand};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -119,6 +119,85 @@ fn create_command_accepts_branch_option() -> Result<(), Box<dyn Error>> {
         .output()?;
 
     assert_eq!(feature_rev.stdout, main_rev.stdout);
+
+    Ok(())
+}
+
+#[test]
+fn create_command_preserves_existing_branch_when_base_specified() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    run(repo_dir.path(), ["git", "branch", "feature/existing"])?;
+    let original_rev = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["rev-parse", "feature/existing"])
+        .output()?;
+
+    // Advance main so the branch would move if we recreated it.
+    fs::write(repo_dir.path().join("CHANGELOG.md"), "notes")?;
+    run(repo_dir.path(), ["git", "add", "."])?;
+    run(
+        repo_dir.path(),
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "Second commit",
+        ],
+    )?;
+    let main_rev_after = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["rev-parse", "main"])
+        .output()?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/existing", "--base", "main"])
+        .assert()
+        .success();
+
+    let branch_rev_after = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["rev-parse", "feature/existing"])
+        .output()?;
+
+    assert_eq!(branch_rev_after.stdout, original_rev.stdout);
+    assert_ne!(branch_rev_after.stdout, main_rev_after.stdout);
+
+    Ok(())
+}
+
+#[test]
+fn create_command_handles_names_with_reserved_characters() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    let names = ["feature/a/b", "feature/a-b"];
+    for name in names {
+        Command::cargo_bin("rsworktree")?
+            .current_dir(repo_dir.path())
+            .env("RSWORKTREE_SHELL", "env")
+            .args(["create", name])
+            .assert()
+            .success();
+    }
+
+    let worktrees_dir = repo_dir.path().join(".rsworktree");
+    for name in names {
+        assert!(worktrees_dir.join(name).exists());
+    }
+
+    let metadata_root = repo_dir.path().join(".git").join("worktrees");
+    let entries: HashSet<_> = fs::read_dir(&metadata_root)?
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(entries.len(), 2, "metadata directories should be unique");
 
     Ok(())
 }
