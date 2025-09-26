@@ -8,6 +8,6 @@ Set Theme "Dracula"
 Type "rsworktree create demo-merge-pr"
 Enter
 Sleep 2500ms
-Type "rsworktree merge-pr-github demo-merge-pr"
+Type "rsworktree merge-pr-github
 Enter
 Sleep 4000ms
