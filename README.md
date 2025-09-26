@@ -7,31 +7,57 @@
 ## Table of Contents
 
 - [Commands](#commands)
+  - [`rsworktree create`](#rsworktree-create)
+  - [`rsworktree cd`](#rsworktree-cd)
+  - [`rsworktree ls`](#rsworktree-ls)
+  - [`rsworktree rm`](#rsworktree-rm)
+  - [`rsworktree pr-github`](#rsworktree-pr-github)
 - [Installation](#installation)
 - [Environment](#environment)
 
 ## Commands
 
-- `rsworktree create <name> [--base <branch>]`
-  - Create a new worktree under `.rsworktree/<name>`, branching at `<name>` by default or from `--base` if provided.
-  - Demo: ![Create demo](tapes/gifs/create.gif)
+### `rsworktree create`
 
-- `rsworktree cd <name> [--print]`
-  - Spawn an interactive shell rooted in the named worktree. Use `--print` to output the path instead.
-  - Demo: ![CD demo](tapes/gifs/cd.gif)
+- Create a new worktree under `.rsworktree/<name>`, branching at `<name>` by default or from `--base` if provided.
+- Demo: ![Create demo](tapes/gifs/create.gif)
+- Options:
+  - `--base <branch>` — branch from `<branch>` instead of `<name>`.
 
-- `rsworktree ls`
-  - List all worktrees tracked under `.rsworktree`, showing nested worktree paths.
-  - Demo: ![List demo](tapes/gifs/ls.gif)
+### `rsworktree cd`
 
-- `rsworktree rm <name> [--force]`
-  - Remove the named worktree. Pass `--force` to mirror `git worktree remove --force` behavior.
-  - Demo: ![Remove demo](tapes/gifs/rm.gif)
+- Spawn an interactive shell rooted in the named worktree. Use `--print` to output the path instead.
+- Demo: ![CD demo](tapes/gifs/cd.gif)
+- Options:
+  - `--print` — write the worktree path to stdout without spawning a shell.
 
-- `rsworktree pr-github [<name>] [--no-push] [--draft] [--fill] [--web] [--reviewer <login> ...] [-- <extra gh args>]`
-  - Push the worktree branch (unless `--no-push`) and invoke `gh pr create` with the provided options. When `<name>` is omitted, the command uses the current `.rsworktree/<name>` directory. If you don’t supply PR metadata flags, `rsworktree` automatically adds `--fill`; you can pass `--title/--body` or `--web` to override that behaviour.
-  - Demo: ![PR demo](tapes/gifs/pr_github.gif)
-  - Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
+### `rsworktree ls`
+
+- List all worktrees tracked under `.rsworktree`, showing nested worktree paths.
+- Demo: ![List demo](tapes/gifs/ls.gif)
+- Options:
+  - _(none)_
+
+### `rsworktree rm`
+
+- Remove the named worktree. Pass `--force` to mirror `git worktree remove --force` behavior.
+- Demo: ![Remove demo](tapes/gifs/rm.gif)
+- Options:
+  - `--force` — force removal, mirroring `git worktree remove --force`.
+
+### `rsworktree pr-github`
+
+- Push the worktree branch (unless `--no-push`) and invoke `gh pr create` with the provided options. When `<name>` is omitted, the command uses the current `.rsworktree/<name>` directory. If you don’t supply PR metadata flags, `rsworktree` automatically adds `--fill`; you can pass `--title/--body` or `--web` to override that behaviour.
+- Demo: ![PR demo](tapes/gifs/pr_github.gif)
+- Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
+- Options:
+  - `<name>` — optional explicit worktree to operate on; defaults to the current directory.
+  - `--no-push` — skip pushing the branch before creating the PR.
+  - `--draft` — open the PR in draft mode.
+  - `--fill` — let `gh pr create` auto-populate PR metadata.
+  - `--web` — open the PR creation flow in a browser instead of filling via CLI.
+  - `--reviewer <login>` — add one or more reviewers by GitHub login.
+  - `-- <extra gh args>` — pass additional arguments through to `gh pr create`.
 
 ## Installation
 
