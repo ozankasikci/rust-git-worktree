@@ -56,7 +56,7 @@ impl ListCommand {
     }
 }
 
-fn find_worktrees(base: &Path) -> color_eyre::Result<Vec<PathBuf>> {
+pub(crate) fn find_worktrees(base: &Path) -> color_eyre::Result<Vec<PathBuf>> {
     let mut results = Vec::new();
     let mut queue = VecDeque::new();
     queue.push_back(base.to_path_buf());
@@ -91,7 +91,7 @@ fn find_worktrees(base: &Path) -> color_eyre::Result<Vec<PathBuf>> {
     Ok(results)
 }
 
-fn format_worktree(path: &Path) -> String {
+pub(crate) fn format_worktree(path: &Path) -> String {
     path.components()
         .map(|component| component.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()

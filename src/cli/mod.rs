@@ -9,6 +9,7 @@ use crate::{
     commands::{
         cd::CdCommand,
         create::CreateCommand,
+        interactive,
         list::ListCommand,
         merge_pr_github::MergePrGithubCommand,
         pr_github::{PrGithubCommand, PrGithubOptions},
@@ -31,6 +32,9 @@ enum Commands {
     Ls,
     /// Open a shell in the given worktree.
     Cd(CdArgs),
+    /// Interactively browse and open worktrees.
+    #[command(alias = "i")]
+    Interactive,
     /// Remove a worktree tracked in `.rsworktree`.
     Rm(RmArgs),
     /// Create a GitHub pull request for the worktree's branch using the GitHub CLI.
@@ -116,6 +120,9 @@ pub fn run() -> color_eyre::Result<()> {
             let command = CdCommand::new(args.name, args.print);
             command.execute(&repo)?;
         }
+        Commands::Interactive => {
+            interactive::run(&repo)?;
+        }
         Commands::Rm(args) => {
             let command = RemoveCommand::new(args.name, args.force);
             command.execute(&repo)?;
@@ -195,6 +202,7 @@ mod tests {
     use super::*;
     use std::{env, fs, path::Path, process::Command as StdCommand};
 
+    use clap::Parser;
     use color_eyre::eyre::{self, WrapErr};
 
     use tempfile::TempDir;
@@ -262,6 +270,19 @@ mod tests {
 
         let resolved = resolve_worktree_name(Some("feature/test".into()), &repo, "pr-github")?;
         assert_eq!(resolved, "feature/test");
+
+        Ok(())
+    }
+
+    #[test]
+    fn parses_interactive_command_and_alias() -> color_eyre::Result<()> {
+        let interactive = Cli::try_parse_from(["rsworktree", "interactive"])
+            .expect("interactive subcommand should parse");
+        assert!(matches!(interactive.command, Commands::Interactive));
+
+        let alias =
+            Cli::try_parse_from(["rsworktree", "i"]).expect("interactive alias should parse");
+        assert!(matches!(alias.command, Commands::Interactive));
 
         Ok(())
     }
