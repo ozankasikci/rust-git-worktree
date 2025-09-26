@@ -7,7 +7,10 @@ use color_eyre::eyre::{self, WrapErr};
 use crate::{
     Repo,
     commands::{
-        cd::CdCommand, create::CreateCommand, list::ListCommand, pr_github::PrGithubCommand,
+        cd::CdCommand,
+        create::CreateCommand,
+        list::ListCommand,
+        pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
 };
@@ -97,7 +100,7 @@ pub fn run() -> color_eyre::Result<()> {
             command.execute(&repo)?;
         }
         Commands::Ls => {
-            let command = ListCommand::default();
+            let command = ListCommand;
             command.execute(&repo)?;
         }
         Commands::Cd(args) => {
@@ -110,16 +113,17 @@ pub fn run() -> color_eyre::Result<()> {
         }
         Commands::PrGithub(args) => {
             let worktree_name = resolve_worktree_name(args.name, &repo)?;
-            let mut command = PrGithubCommand::new(
-                worktree_name,
-                !args.no_push,
-                args.draft,
-                args.fill,
-                args.web,
-                args.remote,
-                args.reviewers,
-                args.extra,
-            );
+            let options = PrGithubOptions {
+                name: worktree_name,
+                push: !args.no_push,
+                draft: args.draft,
+                fill: args.fill,
+                web: args.web,
+                remote: args.remote,
+                reviewers: args.reviewers,
+                extra_args: args.extra,
+            };
+            let mut command = PrGithubCommand::new(options);
             command.execute(&repo)?;
         }
     }

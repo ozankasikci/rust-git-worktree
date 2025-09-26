@@ -61,16 +61,16 @@ impl CdCommand {
 }
 
 pub(crate) fn shell_command() -> (String, Vec<String>) {
-    if let Ok(override_shell) = std::env::var(SHELL_OVERRIDE_ENV) {
-        if !override_shell.trim().is_empty() {
-            return (override_shell, Vec::new());
-        }
+    if let Ok(override_shell) = std::env::var(SHELL_OVERRIDE_ENV)
+        && !override_shell.trim().is_empty()
+    {
+        return (override_shell, Vec::new());
     }
 
-    if let Ok(shell) = std::env::var("SHELL") {
-        if !shell.trim().is_empty() {
-            return (shell, vec!["-i".into()]);
-        }
+    if let Ok(shell) = std::env::var("SHELL")
+        && !shell.trim().is_empty()
+    {
+        return (shell, vec!["-i".into()]);
     }
 
     ("/bin/sh".into(), vec!["-i".into()])
