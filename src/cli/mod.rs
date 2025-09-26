@@ -10,6 +10,7 @@ use crate::{
         cd::CdCommand,
         create::CreateCommand,
         list::ListCommand,
+        merge::MergeCommand,
         pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
@@ -34,6 +35,8 @@ enum Commands {
     Rm(RmArgs),
     /// Create a GitHub pull request for the worktree's branch using the GitHub CLI.
     PrGithub(PrGithubArgs),
+    /// Merge the GitHub pull request for the current or named worktree.
+    Merge(MergeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -90,6 +93,12 @@ struct PrGithubArgs {
     extra: Vec<String>,
 }
 
+#[derive(Parser, Debug)]
+struct MergeArgs {
+    /// Name of the worktree to merge the PR for (defaults to the current worktree)
+    name: Option<String>,
+}
+
 pub fn run() -> color_eyre::Result<()> {
     let cli = Cli::parse();
     let repo = Repo::discover()?;
@@ -112,7 +121,7 @@ pub fn run() -> color_eyre::Result<()> {
             command.execute(&repo)?;
         }
         Commands::PrGithub(args) => {
-            let worktree_name = resolve_worktree_name(args.name, &repo)?;
+            let worktree_name = resolve_worktree_name(args.name, &repo, "pr-github")?;
             let options = PrGithubOptions {
                 name: worktree_name,
                 push: !args.no_push,
@@ -126,12 +135,21 @@ pub fn run() -> color_eyre::Result<()> {
             let mut command = PrGithubCommand::new(options);
             command.execute(&repo)?;
         }
+        Commands::Merge(args) => {
+            let worktree_name = resolve_worktree_name(args.name, &repo, "merge")?;
+            let mut command = MergeCommand::new(worktree_name);
+            command.execute(&repo)?;
+        }
     }
 
     Ok(())
 }
 
-fn resolve_worktree_name(name: Option<String>, repo: &Repo) -> color_eyre::Result<String> {
+fn resolve_worktree_name(
+    name: Option<String>,
+    repo: &Repo,
+    command_label: &str,
+) -> color_eyre::Result<String> {
     if let Some(name) = name {
         return Ok(name);
     }
@@ -146,7 +164,8 @@ fn resolve_worktree_name(name: Option<String>, repo: &Repo) -> color_eyre::Resul
 
     if !canonical_cwd.starts_with(&canonical_worktrees_dir) {
         return Err(eyre::eyre!(
-            "`rsworktree pr-github` without <name> must be run from inside `{}`. Current directory: `{}`.",
+            "`rsworktree {}` without <name> must be run from inside `{}`. Current directory: `{}`.",
+            command_label,
             worktrees_dir.display(),
             canonical_cwd.display()
         ));
@@ -163,7 +182,8 @@ fn resolve_worktree_name(name: Option<String>, repo: &Repo) -> color_eyre::Resul
 
     if components.is_empty() {
         return Err(eyre::eyre!(
-            "Run `rsworktree pr-github` from inside a specific worktree (e.g. `.rsworktree/<name>`)."
+            "Run `rsworktree {}` from inside a specific worktree (e.g. `.rsworktree/<name>`).",
+            command_label
         ));
     }
 
@@ -240,7 +260,7 @@ mod tests {
         init_git_repo(&repo_dir)?;
         let repo = Repo::discover_from(repo_dir.path())?;
 
-        let resolved = resolve_worktree_name(Some("feature/test".into()), &repo)?;
+        let resolved = resolve_worktree_name(Some("feature/test".into()), &repo, "pr-github")?;
         assert_eq!(resolved, "feature/test");
 
         Ok(())
@@ -255,7 +275,7 @@ mod tests {
         fs::create_dir_all(&worktree_dir)?;
 
         let _guard = DirGuard::change_to(&worktree_dir)?;
-        let resolved = resolve_worktree_name(None, &repo)?;
+        let resolved = resolve_worktree_name(None, &repo, "pr-github")?;
         assert_eq!(resolved, "feature/nested");
 
         Ok(())
@@ -268,7 +288,7 @@ mod tests {
         let repo = Repo::discover_from(repo_dir.path())?;
         let _guard = DirGuard::change_to(repo.root())?;
 
-        let err = resolve_worktree_name(None, &repo).unwrap_err();
+        let err = resolve_worktree_name(None, &repo, "pr-github").unwrap_err();
         assert!(err.to_string().contains("must be run from inside"));
 
         Ok(())
@@ -282,7 +302,7 @@ mod tests {
         let worktrees_dir = repo.ensure_worktrees_dir()?;
         let _guard = DirGuard::change_to(&worktrees_dir)?;
 
-        let err = resolve_worktree_name(None, &repo).unwrap_err();
+        let err = resolve_worktree_name(None, &repo, "pr-github").unwrap_err();
         assert!(
             err.to_string()
                 .contains("Run `rsworktree pr-github` from inside")
