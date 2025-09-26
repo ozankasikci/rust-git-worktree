@@ -7,6 +7,7 @@
 ## Table of Contents
 
 - [Commands](#commands)
+  - [Interactive mode](#interactive-mode)
   - [`rsworktree create`](#rsworktree-create)
   - [`rsworktree cd`](#rsworktree-cd)
   - [`rsworktree ls`](#rsworktree-ls)
@@ -17,6 +18,12 @@
 - [Environment](#environment)
 
 ## Commands
+
+### Interactive mode
+
+- Open a terminal UI for browsing worktrees, focusing actions, and inspecting details without memorizing subcommands.
+- Launch it with the `interactive` command: `rsworktree interactive`.
+- ![Interactive mode screenshot](tapes/interactive-mode.png)
 
 ### `rsworktree create`
 
