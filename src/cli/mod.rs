@@ -10,7 +10,7 @@ use crate::{
         cd::CdCommand,
         create::CreateCommand,
         list::ListCommand,
-        merge::MergeCommand,
+        merge_pr_github::MergePrGithubCommand,
         pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
@@ -36,7 +36,7 @@ enum Commands {
     /// Create a GitHub pull request for the worktree's branch using the GitHub CLI.
     PrGithub(PrGithubArgs),
     /// Merge the GitHub pull request for the current or named worktree.
-    Merge(MergeArgs),
+    MergePrGithub(MergePrGithubArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -94,7 +94,7 @@ struct PrGithubArgs {
 }
 
 #[derive(Parser, Debug)]
-struct MergeArgs {
+struct MergePrGithubArgs {
     /// Name of the worktree to merge the PR for (defaults to the current worktree)
     name: Option<String>,
 }
@@ -135,9 +135,9 @@ pub fn run() -> color_eyre::Result<()> {
             let mut command = PrGithubCommand::new(options);
             command.execute(&repo)?;
         }
-        Commands::Merge(args) => {
-            let worktree_name = resolve_worktree_name(args.name, &repo, "merge")?;
-            let mut command = MergeCommand::new(worktree_name);
+        Commands::MergePrGithub(args) => {
+            let worktree_name = resolve_worktree_name(args.name, &repo, "merge-pr-github")?;
+            let mut command = MergePrGithubCommand::new(worktree_name);
             command.execute(&repo)?;
         }
     }

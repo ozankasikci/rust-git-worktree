@@ -10,18 +10,18 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct MergeCommand<R = SystemCommandRunner> {
+pub struct MergePrGithubCommand<R = SystemCommandRunner> {
     name: String,
     runner: R,
 }
 
-impl MergeCommand {
+impl MergePrGithubCommand {
     pub fn new(name: String) -> Self {
         Self::with_runner(name, SystemCommandRunner)
     }
 }
 
-impl<R> MergeCommand<R>
+impl<R> MergePrGithubCommand<R>
 where
     R: CommandRunner,
 {
@@ -343,7 +343,7 @@ mod tests {
             }),
         ]);
 
-        let mut command = MergeCommand::with_runner("feature/test".into(), runner);
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
         command.execute(&repo)?;
 
         assert_eq!(
@@ -417,7 +417,7 @@ mod tests {
             }),
         ]);
 
-        let mut command = MergeCommand::with_runner("feature/test".into(), runner);
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
         command.execute(&repo)?;
 
         assert_eq!(
@@ -466,7 +466,7 @@ mod tests {
             status_code: Some(128),
         }));
 
-        let mut command = MergeCommand::with_runner("feature/test".into(), runner);
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
         let err = command.execute(&repo).unwrap_err();
         assert!(err.to_string().contains("git rev-parse"));
         Ok(())
@@ -509,7 +509,7 @@ mod tests {
             }),
         ]);
 
-        let mut command = MergeCommand::with_runner("feature/test".into(), runner);
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
         let err = command.execute(&repo).unwrap_err();
         assert!(err.to_string().contains("git switch"));
 
