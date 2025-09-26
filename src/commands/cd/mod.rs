@@ -46,15 +46,7 @@ impl CdCommand {
             return Ok(());
         }
 
-        let path_raw = format!("{}", canonical.display());
-        let path = format!(
-            "{}",
-            path_raw
-                .as_str()
-                .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue().bold()) })
-        );
         let (program, args) = shell_command();
-        println!("Spawning shell `{}` in `{}`...", program, path);
 
         let mut cmd = Command::new(&program);
         cmd.args(args);
