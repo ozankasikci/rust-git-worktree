@@ -12,6 +12,7 @@ use crate::{
 #[derive(Debug)]
 pub struct MergePrGithubCommand<R = SystemCommandRunner> {
     name: String,
+    remove_remote_branch: bool,
     runner: R,
 }
 
@@ -26,7 +27,15 @@ where
     R: CommandRunner,
 {
     pub fn with_runner(name: String, runner: R) -> Self {
-        Self { name, runner }
+        Self {
+            name,
+            remove_remote_branch: false,
+            runner,
+        }
+    }
+
+    pub fn enable_remove_remote(&mut self) {
+        self.remove_remote_branch = true;
     }
 
     pub fn execute(&mut self, repo: &Repo) -> color_eyre::Result<()> {
@@ -171,6 +180,10 @@ where
         }
 
         self.restore_worktree_branch(worktree_path, branch)?;
+
+        if self.remove_remote_branch {
+            self.delete_remote_branch(repo_path, branch)?;
+        }
         println!("Merged PR {} for branch `{}`.", pr_label, branch_label);
         Ok(())
     }
@@ -192,6 +205,33 @@ where
 
         Ok(())
     }
+
+    fn delete_remote_branch(&mut self, repo_path: &Path, branch: &str) -> color_eyre::Result<()> {
+        let args = vec![
+            "push".to_owned(),
+            "origin".to_owned(),
+            "--delete".to_owned(),
+            branch.to_owned(),
+        ];
+
+        let output = self
+            .runner
+            .run("git", repo_path, &args)
+            .wrap_err("failed to delete remote branch with `git push`")?;
+
+        let branch_label = format_with_color(branch, |text| format!("{}", text.magenta().bold()));
+
+        if !output.success {
+            if remote_branch_already_gone(&output) {
+                println!("Remote branch `{}` was already removed.", branch_label);
+                return Ok(());
+            }
+            return Err(command_failure("git", &args, &output));
+        }
+
+        println!("Removed remote branch `{}`.", branch_label);
+        Ok(())
+    }
 }
 
 fn gh_branch_delete_failure(output: &CommandOutput) -> bool {
@@ -201,6 +241,15 @@ fn gh_branch_delete_failure(output: &CommandOutput) -> bool {
 
     let stderr = output.stderr.to_lowercase();
     stderr.contains("failed to delete local branch") || stderr.contains("cannot delete branch")
+}
+
+fn remote_branch_already_gone(output: &CommandOutput) -> bool {
+    if output.success {
+        return false;
+    }
+
+    let combined = format!("{}{}", output.stderr, output.stdout).to_lowercase();
+    combined.contains("remote ref does not exist")
 }
 
 fn command_failure(program: &str, args: &[String], output: &CommandOutput) -> color_eyre::Report {
@@ -409,6 +458,216 @@ mod tests {
                     args: vec!["switch".into(), "feature/test".into()],
                 },
             ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn removes_remote_branch_when_requested() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
+        let worktree_path = repo.worktrees_dir().join("feature/remove");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/remove\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":99}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
+
+        let mut command = MergePrGithubCommand::with_runner("feature/remove".into(), runner);
+        command.enable_remove_remote();
+        command.execute(&repo)?;
+
+        assert_eq!(
+            command.runner.calls,
+            vec![
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "list".into(),
+                        "--head".into(),
+                        "feature/remove".into(),
+                        "--state".into(),
+                        "open".into(),
+                        "--json".into(),
+                        "number".into(),
+                        "--limit".into(),
+                        "1".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "merge".into(),
+                        "99".into(),
+                        "--merge".into(),
+                        "--delete-branch".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "feature/remove".into()],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: repo_root,
+                    args: vec![
+                        "push".into(),
+                        "origin".into(),
+                        "--delete".into(),
+                        "feature/remove".into(),
+                    ],
+                },
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn treat_missing_remote_branch_as_success() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let worktree_path = repo.worktrees_dir().join("feature/missing");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/missing\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":7}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout:
+                    "To origin\n - [deleted] feature/missing\nerror: failed to push some refs\n"
+                        .into(),
+                stderr: "error: unable to delete 'feature/missing': remote ref does not exist\n"
+                    .into(),
+                success: false,
+                status_code: Some(1),
+            }),
+        ]);
+
+        let mut command = MergePrGithubCommand::with_runner("feature/missing".into(), runner);
+        command.enable_remove_remote();
+        command.execute(&repo)?;
+
+        assert_eq!(command.runner.calls.len(), 5);
+
+        Ok(())
+    }
+
+    #[test]
+    fn surface_remote_branch_deletion_failures() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let worktree_path = repo.worktrees_dir().join("feature/error");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/error\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":13}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: "error: unable to delete branch due to permissions\n".into(),
+                success: false,
+                status_code: Some(1),
+            }),
+        ]);
+
+        let mut command = MergePrGithubCommand::with_runner("feature/error".into(), runner);
+        command.enable_remove_remote();
+        let result = command.execute(&repo);
+        assert!(
+            result.is_err(),
+            "expected deletion failure to surface as error"
         );
 
         Ok(())
