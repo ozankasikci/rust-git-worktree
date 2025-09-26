@@ -101,6 +101,9 @@ struct PrGithubArgs {
 struct MergePrGithubArgs {
     /// Name of the worktree to merge the PR for (defaults to the current worktree)
     name: Option<String>,
+    /// Remove the remote branch after merging
+    #[arg(long = "remove")]
+    remove_remote: bool,
 }
 
 pub fn run() -> color_eyre::Result<()> {
@@ -145,6 +148,9 @@ pub fn run() -> color_eyre::Result<()> {
         Commands::MergePrGithub(args) => {
             let worktree_name = resolve_worktree_name(args.name, &repo, "merge-pr-github")?;
             let mut command = MergePrGithubCommand::new(worktree_name);
+            if args.remove_remote {
+                command.enable_remove_remote();
+            }
             command.execute(&repo)?;
         }
     }
