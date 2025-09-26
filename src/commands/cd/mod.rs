@@ -79,7 +79,11 @@ pub(crate) fn shell_command() -> (String, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, process::Command as StdCommand};
+    use std::{
+        env, fs,
+        process::Command as StdCommand,
+        sync::{Mutex, OnceLock},
+    };
 
     use tempfile::TempDir;
 
@@ -146,5 +150,89 @@ mod tests {
         let repo = Repo::discover_from(dir.path()).unwrap();
         let command = CdCommand::new("missing".into(), true);
         assert!(command.execute(&repo).is_err());
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+        had_value: bool,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = env::var_os(key);
+            unsafe {
+                env::set_var(key, value);
+            }
+            Self {
+                key,
+                previous,
+                had_value: true,
+            }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = env::var_os(key);
+            unsafe {
+                env::remove_var(key);
+            }
+            Self {
+                key,
+                previous,
+                had_value: false,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.previous.take() {
+                unsafe {
+                    env::set_var(self.key, value);
+                }
+            } else if self.had_value {
+                unsafe {
+                    env::remove_var(self.key);
+                }
+            }
+        }
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn shell_command_prefers_override_env() {
+        let _lock = env_lock().lock().unwrap();
+        let _shell_guard = EnvGuard::remove("SHELL");
+        let _override_guard = EnvGuard::set(SHELL_OVERRIDE_ENV, "/custom/shell");
+
+        let (program, args) = shell_command();
+        assert_eq!(program, "/custom/shell");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn shell_command_uses_shell_env_when_override_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let _override_guard = EnvGuard::remove(SHELL_OVERRIDE_ENV);
+        let _shell_guard = EnvGuard::set("SHELL", "/bin/bash");
+
+        let (program, args) = shell_command();
+        assert_eq!(program, "/bin/bash");
+        assert_eq!(args, vec![String::from("-i")]);
+    }
+
+    #[test]
+    fn shell_command_falls_back_to_default() {
+        let _lock = env_lock().lock().unwrap();
+        let _override_guard = EnvGuard::set(SHELL_OVERRIDE_ENV, "");
+        let _shell_guard = EnvGuard::set("SHELL", "");
+
+        let (program, args) = shell_command();
+        assert_eq!(program, "/bin/sh");
+        assert_eq!(args, vec![String::from("-i")]);
     }
 }
