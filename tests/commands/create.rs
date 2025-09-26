@@ -5,7 +5,16 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 
 fn init_git_repo(dir: &Path) -> Result<(), Box<dyn Error>> {
-    run(dir, ["git", "init"])?;
+    let init_with_main = StdCommand::new("git")
+        .current_dir(dir)
+        .args(["init", "-b", "main"])
+        .status()?;
+
+    if !init_with_main.success() {
+        run(dir, ["git", "init"])?;
+        run(dir, ["git", "branch", "-M", "main"])?;
+    }
+
     fs::write(dir.join("README.md"), "test")?;
     run(dir, ["git", "add", "README.md"])?;
     run(
