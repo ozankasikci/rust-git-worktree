@@ -19,10 +19,10 @@
 
 ### `rsworktree create`
 
-- Create a new worktree under `.rsworktree/<name>` using the branch name as the base.
+- Create a new worktree under `.rsworktree/<name>`. Also changes directory to the worktree.
 - Demo: ![Create demo](tapes/gifs/create.gif)
 - Options:
-  - `--base <branch>` — branch from `<branch>` instead of `<name>`.
+  - `--base <branch>` — branch from `<branch>` instead of the current git branch.
 
 ### `rsworktree cd`
 
