@@ -67,6 +67,13 @@ Install from crates.io with:
 cargo install rsworktree
 ```
 
+On macOS you can install via Homebrew:
+
+```bash
+brew tap ozankasikci/tap
+brew install rsworktree
+```
+
 After the binary is on your `PATH`, run `rsworktree --help` to explore the available commands.
 
 ## Environment
