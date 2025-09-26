@@ -23,18 +23,3 @@
 ## Environment
 
 Set `RSWORKTREE_SHELL` to override the shell used by `rsworktree cd` (falls back to `$SHELL` or `/bin/sh`).
-
-## VHS tapes
-
-The repository includes [VHS](https://github.com/charmbracelet/vhs) tapes under `tapes/` for each primary command. Install VHS and run, for example:
-
-```bash
-vhs < tapes/create.tape
-vhs < tapes/cd.tape
-vhs < tapes/ls.tape
-vhs < tapes/rm.tape
-```
-
-Each command generates a matching `*.gif` demo. The tapes assume the repo contains no existing `demo` worktree; re-run `rsworktree rm demo --force` if you need a clean slate before recording.
-
-You can also run `tapes/scripts/reset_tapes.sh` to delete the demo worktrees and branches used in the recordings (`demo-create`, `demo-cd`, `demo-ls`, `demo-rm`). To regenerate every GIF in one shot, use `tapes/scripts/run_all.sh` (requires VHS to be installed).
