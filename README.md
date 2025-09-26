@@ -20,6 +20,10 @@
   - Remove the named worktree. Pass `--force` to mirror `git worktree remove --force` behavior.
   - Demo: ![Remove demo](tapes/gifs/rm.gif)
 
+- `rsworktree pr-github [<name>] [--no-push] [--draft] [--fill] [--web] [--reviewer <login> ...] [-- <extra gh args>]`
+  - Push the worktree branch (unless `--no-push`) and invoke `gh pr create` with the provided options. When `<name>` is omitted, the command uses the current `.rsworktree/<name>` directory. Because `rsworktree` calls `gh` non-interactively, pass `--fill` or provide `--title/--body` (or open `--web`) so the PR metadata can be supplied.
+  - Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
+
 ## Environment
 
 Set `RSWORKTREE_SHELL` to override the shell used by `rsworktree cd` (falls back to `$SHELL` or `/bin/sh`).

@@ -111,6 +111,7 @@ fn rm_command_spawns_root_shell_when_called_inside_worktree() -> Result<(), Box<
         .path()
         .join(".rsworktree")
         .join("feature/move-back");
+    let repo_root = repo_dir.path().canonicalize()?;
 
     Command::cargo_bin("rsworktree")?
         .current_dir(&worktree_path)
@@ -120,7 +121,7 @@ fn rm_command_spawns_root_shell_when_called_inside_worktree() -> Result<(), Box<
         .success()
         .stdout(predicate::str::contains(format!(
             "PWD={}",
-            repo_dir.path().display()
+            repo_root.display()
         )));
 
     Ok(())

@@ -54,9 +54,12 @@ impl CdCommand {
                 .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue().bold()) })
         );
         let (program, args) = shell_command();
-        let mut cmd = Command::new(program);
+        println!("Spawning shell `{}` in `{}`...", program, path);
+
+        let mut cmd = Command::new(&program);
         cmd.args(args);
         cmd.current_dir(&canonical);
+        cmd.env("PWD", &canonical);
         cmd.status()
             .wrap_err("failed to spawn subshell")?
             .success()

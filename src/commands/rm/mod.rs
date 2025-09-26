@@ -109,8 +109,9 @@ impl RemoveCommand {
             println!("Now in root `{}`.", root_display);
 
             let (program, args) = shell_command();
-            let status = Command::new(program)
+            let status = Command::new(&program)
                 .args(args)
+                .env("PWD", repo.root())
                 .status()
                 .wrap_err("failed to spawn root shell")?;
 
