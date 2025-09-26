@@ -32,6 +32,7 @@ where
     pub fn execute(&mut self, repo: &Repo) -> color_eyre::Result<()> {
         let worktree_path = self.ensure_worktree_path(repo)?;
         let branch = self.determine_branch(&worktree_path)?;
+        let repo_root = repo.root().to_path_buf();
 
         let branch_label = format_with_color(&branch, |text| format!("{}", text.magenta().bold()));
         let path_label = format_with_color(&worktree_path.display().to_string(), |text| {
@@ -42,8 +43,10 @@ where
             branch_label, path_label
         );
 
-        match self.find_pull_request(&worktree_path, &branch)? {
-            Some(pr_number) => self.merge_pull_request(&worktree_path, pr_number, &branch),
+        match self.find_pull_request(&repo_root, &branch)? {
+            Some(pr_number) => {
+                self.merge_pull_request(&repo_root, &branch, &worktree_path, pr_number)
+            }
             None => {
                 println!("No open pull request found for branch `{}`.", branch_label);
                 Ok(())
@@ -89,7 +92,7 @@ where
 
     fn find_pull_request(
         &mut self,
-        worktree_path: &Path,
+        repo_path: &Path,
         branch: &str,
     ) -> color_eyre::Result<Option<u64>> {
         let args = vec![
@@ -107,7 +110,7 @@ where
 
         let output = self
             .runner
-            .run("gh", worktree_path, &args)
+            .run("gh", repo_path, &args)
             .wrap_err("failed to run `gh pr list`")?;
 
         if !output.success {
@@ -127,9 +130,10 @@ where
 
     fn merge_pull_request(
         &mut self,
+        repo_path: &Path,
+        branch: &str,
         worktree_path: &Path,
         pr_number: u64,
-        branch: &str,
     ) -> color_eyre::Result<()> {
         let args = vec![
             "pr".to_owned(),
@@ -141,18 +145,38 @@ where
 
         let output = self
             .runner
-            .run("gh", worktree_path, &args)
+            .run("gh", repo_path, &args)
             .wrap_err("failed to run `gh pr merge`")?;
 
         if !output.success {
             return Err(command_failure("gh", &args, &output));
         }
 
+        self.restore_worktree_branch(worktree_path, branch)?;
+
         let pr_label = format_with_color(&format!("#{}", pr_number), |text| {
             format!("{}", text.green().bold())
         });
         let branch_label = format_with_color(branch, |text| format!("{}", text.magenta().bold()));
         println!("Merged PR {} for branch `{}`.", pr_label, branch_label);
+        Ok(())
+    }
+
+    fn restore_worktree_branch(
+        &mut self,
+        worktree_path: &Path,
+        branch: &str,
+    ) -> color_eyre::Result<()> {
+        let args = vec!["switch".to_owned(), branch.to_owned()];
+        let output = self
+            .runner
+            .run("git", worktree_path, &args)
+            .wrap_err("failed to restore worktree branch with `git switch`")?;
+
+        if !output.success {
+            return Err(command_failure("git", &args, &output));
+        }
+
         Ok(())
     }
 }
@@ -287,6 +311,7 @@ mod tests {
         let repo_dir = TempDir::new()?;
         init_git_repo(&repo_dir)?;
         let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
         let worktree_path = repo.worktrees_dir().join("feature/test");
         fs::create_dir_all(&worktree_path)?;
 
@@ -300,6 +325,12 @@ mod tests {
             }),
             Ok(CommandOutput {
                 stdout: "[{\"number\":42}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
                 stderr: String::new(),
                 success: true,
                 status_code: Some(0),
@@ -325,7 +356,7 @@ mod tests {
                 },
                 RecordedCall {
                     program: "gh".into(),
-                    dir: worktree_path.clone(),
+                    dir: repo_root.clone(),
                     args: vec![
                         "pr".into(),
                         "list".into(),
@@ -341,7 +372,7 @@ mod tests {
                 },
                 RecordedCall {
                     program: "gh".into(),
-                    dir: worktree_path,
+                    dir: repo_root,
                     args: vec![
                         "pr".into(),
                         "merge".into(),
@@ -349,6 +380,11 @@ mod tests {
                         "--merge".into(),
                         "--delete-branch".into(),
                     ],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "feature/test".into()],
                 },
             ]
         );
@@ -361,6 +397,7 @@ mod tests {
         let repo_dir = TempDir::new()?;
         init_git_repo(&repo_dir)?;
         let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
         let worktree_path = repo.worktrees_dir().join("feature/test");
         fs::create_dir_all(&worktree_path)?;
 
@@ -393,7 +430,7 @@ mod tests {
                 },
                 RecordedCall {
                     program: "gh".into(),
-                    dir: worktree_path,
+                    dir: repo_root,
                     args: vec![
                         "pr".into(),
                         "list".into(),
@@ -432,6 +469,93 @@ mod tests {
         let mut command = MergeCommand::with_runner("feature/test".into(), runner);
         let err = command.execute(&repo).unwrap_err();
         assert!(err.to_string().contains("git rev-parse"));
+        Ok(())
+    }
+
+    #[test]
+    fn surfaces_switch_failures() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
+        let worktree_path = repo.worktrees_dir().join("feature/test");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/test\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":42}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::from("fatal: not a git repository"),
+                success: false,
+                status_code: Some(128),
+            }),
+        ]);
+
+        let mut command = MergeCommand::with_runner("feature/test".into(), runner);
+        let err = command.execute(&repo).unwrap_err();
+        assert!(err.to_string().contains("git switch"));
+
+        assert_eq!(
+            command.runner.calls,
+            vec![
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "list".into(),
+                        "--head".into(),
+                        "feature/test".into(),
+                        "--state".into(),
+                        "open".into(),
+                        "--json".into(),
+                        "number".into(),
+                        "--limit".into(),
+                        "1".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root,
+                    args: vec![
+                        "pr".into(),
+                        "merge".into(),
+                        "42".into(),
+                        "--merge".into(),
+                        "--delete-branch".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path,
+                    args: vec!["switch".into(), "feature/test".into()],
+                },
+            ]
+        );
+
         Ok(())
     }
 }
