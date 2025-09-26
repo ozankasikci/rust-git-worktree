@@ -90,6 +90,7 @@ fn pr_github_invokes_gh_with_expected_arguments() -> Result<(), Box<dyn Error>> 
         .current_dir(repo_dir.path())
         .env("PATH", &stub.path_value)
         .env("GH_LOG", &stub.log_path)
+        .env("GH_STDOUT", "https://example.com/pulls/42")
         .args([
             "pr-github",
             "feature/test",
@@ -104,7 +105,10 @@ fn pr_github_invokes_gh_with_expected_arguments() -> Result<(), Box<dyn Error>> 
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("GitHub pull request created"));
+        .stdout(
+            predicate::str::contains("GitHub pull request created")
+                .and(predicate::str::contains("\nhttps://example.com/pulls/42")),
+        );
 
     let log_contents = fs::read_to_string(&stub.log_path)?;
     let worktree_path = repo_dir
@@ -211,7 +215,7 @@ fn install_stub_gh() -> Result<StubGh, Box<dyn Error>> {
     let gh_path = stub_dir.path().join("gh");
     fs::write(
         &gh_path,
-        "#! /bin/sh\n\nprintf '%s\n' \"$PWD\" > \"$GH_LOG\"\nprintf 'args:%s\n' \"$*\" >> \"$GH_LOG\"\n",
+        "#! /bin/sh\n\nprintf '%s\n' \"$PWD\" > \"$GH_LOG\"\nprintf 'args:%s\n' \"$*\" >> \"$GH_LOG\"\n\nif [ -n \"${GH_STDOUT:-}\" ]; then\n  printf '%s\n' \"$GH_STDOUT\"\nfi\n",
     )?;
     #[cfg(unix)]
     {
