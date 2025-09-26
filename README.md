@@ -1,6 +1,6 @@
 # rsworktree
 
-[![Codecov](https://codecov.io/gh/ozankasikci/rust-git-worktree/branch/main/graph/badge.svg)](https://codecov.io/gh/ozankasikci/rust-git-worktree)
+[![Codecov](https://codecov.io/gh/ozankasikci/rust-git-worktree/branch/master/graph/badge.svg)](https://codecov.io/gh/ozankasikci/rust-git-worktree)
 
 `rsworktree` is a Rust CLI for managing Git worktrees in a single repo-local directory (`.rsworktree`). It provides a focused, ergonomic workflow for creating, jumping into, listing, and removing worktrees without leaving the terminal.
 
