@@ -14,32 +14,59 @@ pub struct CreateCommand {
     base: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreateOutcome {
+    AlreadyExists,
+    Created,
+}
+
 impl CreateCommand {
     pub fn new(name: String, base: Option<String>) -> Self {
         Self { name, base }
     }
 
     pub fn execute(&self, repo: &Repo) -> color_eyre::Result<()> {
+        let outcome = self.create_internal(repo, false)?;
+        match outcome {
+            CreateOutcome::Created | CreateOutcome::AlreadyExists => self.enter_worktree(repo),
+        }
+    }
+
+    pub fn create_without_enter(
+        &self,
+        repo: &Repo,
+        quiet: bool,
+    ) -> color_eyre::Result<CreateOutcome> {
+        self.create_internal(repo, quiet)
+    }
+
+    fn enter_worktree(&self, repo: &Repo) -> color_eyre::Result<()> {
+        CdCommand::new(self.name.clone(), false).execute(repo)
+    }
+
+    fn create_internal(&self, repo: &Repo, quiet: bool) -> color_eyre::Result<CreateOutcome> {
         let worktrees_dir = repo.ensure_worktrees_dir()?;
         let worktree_path = worktrees_dir.join(&self.name);
         let target_branch = self.name.as_str();
         let base_branch = self.base.as_deref();
 
         if worktree_path.exists() {
-            let name = format!(
-                "{}",
-                self.name
-                    .as_str()
-                    .if_supports_color(Stream::Stdout, |text| {
-                        format!("{}", text.cyan().bold())
-                    })
-            );
-            println!(
-                "Worktree `{}` already exists at `{}`.",
-                name,
-                worktree_path.display()
-            );
-            return self.enter_worktree(repo);
+            if !quiet {
+                let name = format!(
+                    "{}",
+                    self.name
+                        .as_str()
+                        .if_supports_color(Stream::Stdout, |text| {
+                            format!("{}", text.cyan().bold())
+                        })
+                );
+                println!(
+                    "Worktree `{}` already exists at `{}`.",
+                    name,
+                    worktree_path.display()
+                );
+            }
+            return Ok(CreateOutcome::AlreadyExists);
         }
 
         if let Some(parent) = worktree_path.parent() {
@@ -63,36 +90,34 @@ impl CreateCommand {
                 )
             })?;
 
-        let name = format!(
-            "{}",
-            target_branch.if_supports_color(Stream::Stdout, |text| {
-                format!("{}", text.green().bold())
-            })
-        );
-        let path_raw = format!("{}", worktree_path.display());
-        let path = format!(
-            "{}",
-            path_raw
-                .as_str()
-                .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue()) })
-        );
-        if let Some(base) = base_branch {
-            let base = format!(
+        if !quiet {
+            let name = format!(
                 "{}",
-                base.if_supports_color(Stream::Stdout, |text| {
-                    format!("{}", text.magenta().bold())
+                target_branch.if_supports_color(Stream::Stdout, |text| {
+                    format!("{}", text.green().bold())
                 })
             );
-            println!("Created worktree `{}` at `{}` from `{}`.", name, path, base);
-        } else {
-            println!("Created worktree `{}` at `{}`.", name, path);
+            let path_raw = format!("{}", worktree_path.display());
+            let path = format!(
+                "{}",
+                path_raw
+                    .as_str()
+                    .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue()) })
+            );
+            if let Some(base) = base_branch {
+                let base = format!(
+                    "{}",
+                    base.if_supports_color(Stream::Stdout, |text| {
+                        format!("{}", text.magenta().bold())
+                    })
+                );
+                println!("Created worktree `{}` at `{}` from `{}`.", name, path, base);
+            } else {
+                println!("Created worktree `{}` at `{}`.", name, path);
+            }
         }
 
-        self.enter_worktree(repo)
-    }
-
-    fn enter_worktree(&self, repo: &Repo) -> color_eyre::Result<()> {
-        CdCommand::new(self.name.clone(), false).execute(repo)
+        Ok(CreateOutcome::Created)
     }
 }
 
