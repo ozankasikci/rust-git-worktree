@@ -19,14 +19,14 @@
 
 ### `rsworktree create`
 
-- Create a new worktree under `.rsworktree/<name>`, branching at `<name>` by default or from `--base` if provided.
+- Create a new worktree under `.rsworktree/<name>` using the branch name as the base.
 - Demo: ![Create demo](tapes/gifs/create.gif)
 - Options:
   - `--base <branch>` — branch from `<branch>` instead of `<name>`.
 
 ### `rsworktree cd`
 
-- Spawn an interactive shell rooted in the named worktree. Use `--print` to output the path instead.
+- Spawn an interactive shell rooted in the named worktree.
 - Demo: ![CD demo](tapes/gifs/cd.gif)
 - Options:
   - `--print` — write the worktree path to stdout without spawning a shell.
@@ -40,14 +40,14 @@
 
 ### `rsworktree rm`
 
-- Remove the named worktree. Pass `--force` to mirror `git worktree remove --force` behavior.
+- Remove the named worktree.
 - Demo: ![Remove demo](tapes/gifs/rm.gif)
 - Options:
   - `--force` — force removal, mirroring `git worktree remove --force`.
 
 ### `rsworktree pr-github`
 
-- Push the worktree branch (unless `--no-push`) and invoke `gh pr create` with the provided options. When `<name>` is omitted, the command uses the current `.rsworktree/<name>` directory. If you don’t supply PR metadata flags, `rsworktree` automatically adds `--fill`; you can pass `--title/--body` or `--web` to override that behaviour.
+- Push the worktree branch and invoke `gh pr create` for the current or named worktree.
 - Demo: ![PR demo](tapes/gifs/pr_github.gif)
 - Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
 - Options:
