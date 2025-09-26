@@ -79,17 +79,22 @@ fn cd_command_spawns_shell_in_worktree() -> Result<(), Box<dyn Error>> {
         .assert()
         .success();
 
+    let worktree_path = repo_dir
+        .path()
+        .join(".rsworktree")
+        .join("feature/test")
+        .canonicalize()?;
+
     Command::cargo_bin("rsworktree")?
         .current_dir(repo_dir.path())
         .env("RSWORKTREE_SHELL", "env")
         .args(["cd", "feature/test"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("Spawning shell")
-                .and(predicate::str::contains("PWD=/"))
-                .and(predicate::str::contains("feature/test")),
-        );
+        .stdout(predicate::str::contains(format!(
+            "PWD={}",
+            worktree_path.display()
+        )));
 
     Ok(())
 }
