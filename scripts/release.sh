@@ -153,11 +153,12 @@ git push origin "v$new_version"
 cargo publish --locked
 
 notes_file=$(mktemp)
-python3 - "$new_version" <<'PY'
+python3 - "$new_version" "$notes_file" <<'PY'
 import sys
 import re
 from pathlib import Path
 version = sys.argv[1]
+notes_path = Path(sys.argv[2])
 text = Path("CHANGELOG.md").read_text()
 pattern = re.compile(rf"^## \[{re.escape(version)}\][^\n]*\n", re.MULTILINE)
 match = pattern.search(text)
@@ -170,8 +171,8 @@ if following:
     body = rest[:match.end()-start + following.start()]
 else:
     body = rest
-print(body.strip())
-PY > "$notes_file"
+notes_path.write_text(body.strip() + "\n")
+PY
 
 if ! grep -Fqs "## [$new_version" "$notes_file"; then
   echo "error: failed to extract release notes" >&2
