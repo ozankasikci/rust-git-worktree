@@ -12,6 +12,7 @@
   - [`rsworktree ls`](#rsworktree-ls)
   - [`rsworktree rm`](#rsworktree-rm)
   - [`rsworktree pr-github`](#rsworktree-pr-github)
+  - [`rsworktree merge-pr-github`](#rsworktree-merge-pr-github)
 - [Installation](#installation)
 - [Environment](#environment)
 
@@ -58,6 +59,14 @@
   - `--web` — open the PR creation flow in a browser instead of filling via CLI.
   - `--reviewer <login>` — add one or more reviewers by GitHub login.
   - `-- <extra gh args>` — pass additional arguments through to `gh pr create`.
+
+### `rsworktree merge-pr-github`
+
+- Merge the open GitHub pull request for the current or named worktree using `gh pr merge`.
+- Demo: ![Merge PR demo](tapes/gifs/merge_pr_github.gif)
+- Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
+- Options:
+  - `<name>` — optional explicit worktree to operate on; defaults to the current directory.
 
 ## Installation
 
