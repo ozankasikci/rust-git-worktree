@@ -83,14 +83,6 @@ impl CreateCommand {
                 .as_str()
                 .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue()) })
         );
-        let parent_raw = format!("{}", worktrees_dir.display());
-        let parent = format!(
-            "{}",
-            parent_raw
-                .as_str()
-                .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue()))
-        );
-
         if let Some(base) = base_branch {
             let base = format!(
                 "{}",
@@ -98,15 +90,9 @@ impl CreateCommand {
                     format!("{}", text.magenta().bold())
                 })
             );
-            println!(
-                "Created worktree `{}` at `{}` under `{}` from `{}`.",
-                name, path, parent, base
-            );
+            println!("Created worktree `{}` at `{}` from `{}`.", name, path, base);
         } else {
-            println!(
-                "Created worktree `{}` at `{}` under `{}`.",
-                name, path, parent
-            );
+            println!("Created worktree `{}` at `{}`.", name, path);
         }
 
         self.enter_worktree(repo)

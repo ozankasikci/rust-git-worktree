@@ -53,14 +53,6 @@ impl CdCommand {
                 .as_str()
                 .if_supports_color(Stream::Stdout, |text| { format!("{}", text.blue().bold()) })
         );
-        let message_raw = format!("Spawning shell at `{}`...", path);
-        let message = format!(
-            "{}",
-            message_raw
-                .as_str()
-                .if_supports_color(Stream::Stdout, |text| format!("{}", text.bold()))
-        );
-        println!("{}", message);
         let (program, args) = shell_command();
         let mut cmd = Command::new(program);
         cmd.args(args);
