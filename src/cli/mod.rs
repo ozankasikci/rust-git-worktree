@@ -46,7 +46,7 @@ struct CreateArgs {
 struct CdArgs {
     /// Name of the worktree to enter
     name: String,
-    /// Only print the resolved path instead of spawning a shell
+    /// Only print the resolved worktree path
     #[arg(long)]
     print: bool,
 }
