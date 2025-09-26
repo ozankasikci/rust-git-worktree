@@ -6,21 +6,25 @@
 
 - `rsworktree create <name> [--base <branch>]`
   - Create a new worktree under `.rsworktree/<name>`, branching at `<name>` by default or from `--base` if provided.
+  - Demo: ![Create demo](tapes/gifs/create.gif)
 
 - `rsworktree cd <name> [--print]`
   - Spawn an interactive shell rooted in the named worktree. Use `--print` to output the path instead.
+  - Demo: ![CD demo](tapes/gifs/cd.gif)
 
 - `rsworktree ls`
   - List all worktrees tracked under `.rsworktree`, showing nested worktree paths.
+  - Demo: ![List demo](tapes/gifs/ls.gif)
 
 - `rsworktree rm <name> [--force]`
   - Remove the named worktree. Pass `--force` to mirror `git worktree remove --force` behavior.
+  - Demo: ![Remove demo](tapes/gifs/rm.gif)
 
 ## Environment
 
 Set `RSWORKTREE_SHELL` to override the shell used by `rsworktree cd` (falls back to `$SHELL` or `/bin/sh`).
 
-## Recording demos
+## VHS tapes
 
 The repository includes [VHS](https://github.com/charmbracelet/vhs) tapes under `tapes/` for each primary command. Install VHS and run, for example:
 
@@ -34,10 +38,3 @@ vhs < tapes/rm.tape
 Each command generates a matching `*.gif` demo. The tapes assume the repo contains no existing `demo` worktree; re-run `rsworktree rm demo --force` if you need a clean slate before recording.
 
 You can also run `tapes/scripts/reset_tapes.sh` to delete the demo worktrees and branches used in the recordings (`demo-create`, `demo-cd`, `demo-ls`, `demo-rm`). To regenerate every GIF in one shot, use `tapes/scripts/run_all.sh` (requires VHS to be installed).
-
-### Pre-rendered demos
-
-![Create demo](tapes/gifs/create.gif)
-![CD demo](tapes/gifs/cd.gif)
-![List demo](tapes/gifs/ls.gif)
-![Remove demo](tapes/gifs/rm.gif)
