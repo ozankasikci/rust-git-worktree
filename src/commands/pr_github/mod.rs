@@ -10,6 +10,18 @@ use owo_colors::{OwoColorize, Stream};
 use crate::Repo;
 
 #[derive(Debug)]
+pub struct PrGithubOptions {
+    pub name: String,
+    pub push: bool,
+    pub draft: bool,
+    pub fill: bool,
+    pub web: bool,
+    pub remote: String,
+    pub reviewers: Vec<String>,
+    pub extra_args: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct PrGithubCommand<R = SystemCommandRunner> {
     name: String,
     push: bool,
@@ -23,17 +35,17 @@ pub struct PrGithubCommand<R = SystemCommandRunner> {
 }
 
 impl PrGithubCommand {
-    pub fn new(
-        name: String,
-        push: bool,
-        draft: bool,
-        fill: bool,
-        web: bool,
-        remote: String,
-        reviewers: Vec<String>,
-        extra_args: Vec<String>,
-    ) -> Self {
-        Self::with_runner(
+    pub fn new(options: PrGithubOptions) -> Self {
+        Self::with_runner(options, SystemCommandRunner)
+    }
+}
+
+impl<R> PrGithubCommand<R>
+where
+    R: CommandRunner,
+{
+    pub fn with_runner(options: PrGithubOptions, runner: R) -> Self {
+        let PrGithubOptions {
             name,
             push,
             draft,
@@ -42,26 +54,7 @@ impl PrGithubCommand {
             remote,
             reviewers,
             extra_args,
-            SystemCommandRunner,
-        )
-    }
-}
-
-impl<R> PrGithubCommand<R>
-where
-    R: CommandRunner,
-{
-    pub fn with_runner(
-        name: String,
-        push: bool,
-        draft: bool,
-        fill: bool,
-        web: bool,
-        remote: String,
-        reviewers: Vec<String>,
-        extra_args: Vec<String>,
-        runner: R,
-    ) -> Self {
+        } = options;
         Self {
             name,
             push,
@@ -545,17 +538,17 @@ mod tests {
             status_code: Some(0),
         }));
 
-        let mut command = PrGithubCommand::with_runner(
-            "feature/test".into(),
-            true,
-            false,
-            true,
-            false,
-            "origin".into(),
-            vec!["octocat".into()],
-            vec!["--label".into(), "ready".into()],
-            runner,
-        );
+        let options = PrGithubOptions {
+            name: "feature/test".into(),
+            push: true,
+            draft: false,
+            fill: true,
+            web: false,
+            remote: "origin".into(),
+            reviewers: vec!["octocat".into()],
+            extra_args: vec!["--label".into(), "ready".into()],
+        };
+        let mut command = PrGithubCommand::with_runner(options, runner);
 
         command.execute(&repo)?;
 
@@ -633,17 +626,17 @@ mod tests {
             status_code: Some(0),
         }));
 
-        let mut command = PrGithubCommand::with_runner(
-            "feature/test".into(),
-            false,
-            true,
-            true,
-            true,
-            "origin".into(),
-            Vec::new(),
-            Vec::new(),
-            runner,
-        );
+        let options = PrGithubOptions {
+            name: "feature/test".into(),
+            push: false,
+            draft: true,
+            fill: true,
+            web: true,
+            remote: "origin".into(),
+            reviewers: Vec::new(),
+            extra_args: Vec::new(),
+        };
+        let mut command = PrGithubCommand::with_runner(options, runner);
 
         command.execute(&repo)?;
 
@@ -679,17 +672,17 @@ mod tests {
         init_git_repo(&repo_dir)?;
         let repo = Repo::discover_from(repo_dir.path())?;
 
-        let mut command = PrGithubCommand::with_runner(
-            "missing".into(),
-            true,
-            false,
-            false,
-            false,
-            "origin".into(),
-            Vec::new(),
-            Vec::new(),
-            MockCommandRunner::default(),
-        );
+        let options = PrGithubOptions {
+            name: "missing".into(),
+            push: true,
+            draft: false,
+            fill: false,
+            web: false,
+            remote: "origin".into(),
+            reviewers: Vec::new(),
+            extra_args: Vec::new(),
+        };
+        let mut command = PrGithubCommand::with_runner(options, MockCommandRunner::default());
 
         let err = command.execute(&repo).unwrap_err();
         assert!(err.to_string().contains("does not exist"));
@@ -712,17 +705,17 @@ mod tests {
             status_code: Some(128),
         }));
 
-        let mut command = PrGithubCommand::with_runner(
-            "feature/test".into(),
-            true,
-            false,
-            false,
-            false,
-            "origin".into(),
-            Vec::new(),
-            Vec::new(),
-            runner,
-        );
+        let options = PrGithubOptions {
+            name: "feature/test".into(),
+            push: true,
+            draft: false,
+            fill: false,
+            web: false,
+            remote: "origin".into(),
+            reviewers: Vec::new(),
+            extra_args: Vec::new(),
+        };
+        let mut command = PrGithubCommand::with_runner(options, runner);
 
         let err = command.execute(&repo).unwrap_err();
         assert!(err.to_string().contains("git rev-parse"));
@@ -759,17 +752,17 @@ mod tests {
             }),
         ]);
 
-        let mut command = PrGithubCommand::with_runner(
-            "feature/test".into(),
-            true,
-            false,
-            false,
-            false,
-            "origin".into(),
-            Vec::new(),
-            Vec::new(),
-            runner,
-        );
+        let options = PrGithubOptions {
+            name: "feature/test".into(),
+            push: true,
+            draft: false,
+            fill: false,
+            web: false,
+            remote: "origin".into(),
+            reviewers: Vec::new(),
+            extra_args: Vec::new(),
+        };
+        let mut command = PrGithubCommand::with_runner(options, runner);
 
         command.execute(&repo)?;
 
