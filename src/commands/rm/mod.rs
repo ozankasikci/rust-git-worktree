@@ -14,11 +14,21 @@ use crate::commands::cd::SHELL_OVERRIDE_ENV;
 pub struct RemoveCommand {
     name: String,
     force: bool,
+    quiet: bool,
 }
 
 impl RemoveCommand {
     pub fn new(name: String, force: bool) -> Self {
-        Self { name, force }
+        Self {
+            name,
+            force,
+            quiet: false,
+        }
+    }
+
+    pub fn with_quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
+        self
     }
 
     pub fn execute(&self, repo: &Repo) -> color_eyre::Result<()> {
@@ -30,10 +40,12 @@ impl RemoveCommand {
                 dir.as_str()
                     .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue()))
             );
-            println!(
-                "No worktrees directory found at `{}`; nothing to remove.",
-                dir
-            );
+            if !self.quiet {
+                println!(
+                    "No worktrees directory found at `{}`; nothing to remove.",
+                    dir
+                );
+            }
             return Ok(());
         }
 
@@ -47,11 +59,13 @@ impl RemoveCommand {
                     .as_str()
                     .if_supports_color(Stream::Stdout, |text| format!("{}", text.cyan()))
             );
-            println!(
-                "Worktree `{}` does not exist under `{}`.",
-                name,
-                worktrees_dir.display()
-            );
+            if !self.quiet {
+                println!(
+                    "Worktree `{}` does not exist under `{}`.",
+                    name,
+                    worktrees_dir.display()
+                );
+            }
             return Ok(());
         }
 
@@ -65,11 +79,13 @@ impl RemoveCommand {
                         .as_str()
                         .if_supports_color(Stream::Stdout, |text| format!("{}", text.cyan()))
                 );
-                println!(
-                    "Worktree `{}` does not exist under `{}`.",
-                    name,
-                    worktrees_dir.display()
-                );
+                if !self.quiet {
+                    println!(
+                        "Worktree `{}` does not exist under `{}`.",
+                        name,
+                        worktrees_dir.display()
+                    );
+                }
                 return Ok(());
             }
         };
@@ -106,11 +122,13 @@ impl RemoveCommand {
                 .as_str()
                 .if_supports_color(Stream::Stdout, |text| format!("{}", text.red().bold()))
         );
-        println!(
-            "Removed worktree `{}` from `{}`.",
-            name,
-            worktrees_dir.display()
-        );
+        if !self.quiet {
+            println!(
+                "Removed worktree `{}` from `{}`.",
+                name,
+                worktrees_dir.display()
+            );
+        }
 
         let need_reposition = match std::env::current_dir() {
             Ok(dir) => {
@@ -135,7 +153,9 @@ impl RemoveCommand {
                     .as_str()
                     .if_supports_color(Stream::Stdout, |text| format!("{}", text.blue().bold()))
             );
-            println!("Now in root `{}`.", root_display);
+            if !self.quiet {
+                println!("Now in root `{}`.", root_display);
+            }
 
             let (program, args) = shell_command();
             let status = Command::new(&program)
