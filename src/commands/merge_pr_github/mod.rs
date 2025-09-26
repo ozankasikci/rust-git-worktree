@@ -148,16 +148,29 @@ where
             .run("gh", repo_path, &args)
             .wrap_err("failed to run `gh pr merge`")?;
 
-        if !output.success {
+        let branch_delete_failed = gh_branch_delete_failure(&output);
+
+        if !output.success && !branch_delete_failed {
             return Err(command_failure("gh", &args, &output));
         }
-
-        self.restore_worktree_branch(worktree_path, branch)?;
 
         let pr_label = format_with_color(&format!("#{}", pr_number), |text| {
             format!("{}", text.green().bold())
         });
         let branch_label = format_with_color(branch, |text| format!("{}", text.magenta().bold()));
+
+        if branch_delete_failed {
+            let warning = format!(
+                "PR {} merged but `gh` could not delete branch `{}`. Leaving the branch intact.",
+                pr_label, branch_label
+            );
+            println!(
+                "{}",
+                warning.if_supports_color(Stream::Stdout, |text| format!("{}", text.yellow()))
+            );
+        }
+
+        self.restore_worktree_branch(worktree_path, branch)?;
         println!("Merged PR {} for branch `{}`.", pr_label, branch_label);
         Ok(())
     }
@@ -179,6 +192,15 @@ where
 
         Ok(())
     }
+}
+
+fn gh_branch_delete_failure(output: &CommandOutput) -> bool {
+    if output.success {
+        return false;
+    }
+
+    let stderr = output.stderr.to_lowercase();
+    stderr.contains("failed to delete local branch") || stderr.contains("cannot delete branch")
 }
 
 fn command_failure(program: &str, args: &[String], output: &CommandOutput) -> color_eyre::Report {
@@ -384,6 +406,92 @@ mod tests {
                 RecordedCall {
                     program: "git".into(),
                     dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "feature/test".into()],
+                },
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn treats_branch_delete_failure_as_success() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
+        let worktree_path = repo.worktrees_dir().join("feature/test");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/test\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":42}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "Pull request successfully merged".into(),
+                stderr: "failed to delete local branch merge-cmd".into(),
+                success: false,
+                status_code: Some(1),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
+
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
+        command.execute(&repo)?;
+
+        assert_eq!(
+            command.runner.calls,
+            vec![
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "list".into(),
+                        "--head".into(),
+                        "feature/test".into(),
+                        "--state".into(),
+                        "open".into(),
+                        "--json".into(),
+                        "number".into(),
+                        "--limit".into(),
+                        "1".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "merge".into(),
+                        "42".into(),
+                        "--merge".into(),
+                        "--delete-branch".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path,
                     args: vec!["switch".into(), "feature/test".into()],
                 },
             ]
