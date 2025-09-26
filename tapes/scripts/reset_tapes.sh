@@ -6,7 +6,7 @@ TAPES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$TAPES_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-names=(demo-create demo-cd demo-ls demo-rm)
+names=(demo-create demo-cd demo-ls demo-rm demo-pr)
 
 if ! command -v rsworktree >/dev/null 2>&1; then
   echo "rsworktree is not on PATH. Install it or run `cargo install --path .` from the repo." >&2
@@ -20,3 +20,4 @@ for name in "${names[@]}"; do
 done
 
 git worktree prune >/dev/null 2>&1 || true
+rm -rf "$REPO_ROOT/.bin"
