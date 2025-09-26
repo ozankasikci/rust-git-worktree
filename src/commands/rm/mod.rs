@@ -138,7 +138,7 @@ impl RemoveCommand {
             println!("Now in root `{}`.", root_display);
 
             let (program, args) = shell_command();
-            let status = Command::new(program)
+            let status = Command::new(&program)
                 .args(args)
                 .current_dir(repo.root())
                 .env("PWD", logical_pwd(repo.root()))

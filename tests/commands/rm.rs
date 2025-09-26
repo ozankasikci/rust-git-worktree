@@ -111,6 +111,7 @@ fn rm_command_spawns_root_shell_when_called_inside_worktree() -> Result<(), Box<
         .path()
         .join(".rsworktree")
         .join("feature/move-back");
+    let repo_root = repo_dir.path().canonicalize()?;
 
     let repo_root = repo_dir.path();
 

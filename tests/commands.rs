@@ -4,5 +4,7 @@ mod cd;
 mod create;
 #[path = "commands/list.rs"]
 mod list;
+#[path = "commands/pr_github.rs"]
+mod pr_github;
 #[path = "commands/rm.rs"]
 mod rm;
