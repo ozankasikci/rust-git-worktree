@@ -125,3 +125,71 @@ fn rm_command_spawns_root_shell_when_called_inside_worktree() -> Result<(), Box<
 
     Ok(())
 }
+
+#[test]
+fn rm_command_refuses_locked_worktree_without_force() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/locked"])
+        .assert()
+        .success();
+
+    let worktree_path = repo_dir.path().join(".rsworktree").join("feature/locked");
+
+    let status = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["worktree", "lock", worktree_path.to_str().unwrap()])
+        .status()?;
+    assert!(status.success(), "git worktree lock should succeed");
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["rm", "feature/locked"])
+        .assert()
+        .failure();
+
+    assert!(worktree_path.exists(), "locked worktree should remain");
+
+    Ok(())
+}
+
+#[test]
+fn rm_command_force_removes_locked_worktree() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .env("RSWORKTREE_SHELL", "env")
+        .args(["create", "feature/locked-force"])
+        .assert()
+        .success();
+
+    let worktree_path = repo_dir
+        .path()
+        .join(".rsworktree")
+        .join("feature/locked-force");
+
+    let status = StdCommand::new("git")
+        .current_dir(repo_dir.path())
+        .args(["worktree", "lock", worktree_path.to_str().unwrap()])
+        .status()?;
+    assert!(status.success(), "git worktree lock should succeed");
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["rm", "feature/locked-force", "--force"])
+        .assert()
+        .success();
+
+    assert!(
+        !worktree_path.exists(),
+        "forced removal should delete the worktree directory"
+    );
+
+    Ok(())
+}
