@@ -42,6 +42,24 @@ VERSION=$1
 TAP_PATH=${2:-${HOMEBREW_TAP_PATH:-"$REPO_ROOT/../homebrew-tap"}}
 FORMULA_PATH="$TAP_PATH/Formula/rsworktree.rb"
 
+infer_repo_url() {
+  case "$1" in
+    git@github.com:*)
+      local path=${1#git@github.com:}
+      path=${path%.git}
+      echo "https://github.com/$path"
+      ;;
+    https://github.com/*)
+      local path=${1#https://github.com/}
+      path=${path%.git}
+      echo "https://github.com/$path"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
 if [[ ! -d "$TAP_PATH" ]]; then
   echo "error: tap path '$TAP_PATH' not found" >&2
   exit 1
@@ -62,14 +80,24 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-TARBALL_URL=${HOMEBREW_TARBALL_URL:-"https://github.com/ozan/rust-git-worktree/archive/refs/tags/v${VERSION}.tar.gz"}
+origin_url=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)
+default_repo_url=$(infer_repo_url "$origin_url")
+if [[ -z "$default_repo_url" ]]; then
+  default_repo_url="https://github.com/ozankasikci/rust-git-worktree"
+fi
+
+TARBALL_URL=${HOMEBREW_TARBALL_URL:-"${default_repo_url}/archive/refs/tags/v${VERSION}.tar.gz"}
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 tarball="$tmpdir/rsworktree-${VERSION}.tar.gz"
 
 echo "Downloading release tarball to compute checksum..."
-curl -sSL --fail "$TARBALL_URL" -o "$tarball"
+if ! curl -sSL --fail "$TARBALL_URL" -o "$tarball"; then
+  echo "error: failed to download $TARBALL_URL" >&2
+  echo "       make sure tag v$VERSION is published or set HOMEBREW_TARBALL_URL" >&2
+  exit 1
+fi
 
 SHA256=$($checksum_cmd "$tarball" | awk '{print $1}')
 
