@@ -14,11 +14,12 @@ use crate::{
         cd::{CdCommand, shell_command},
         create::{CreateCommand, CreateOutcome},
         list::{find_worktrees, format_worktree},
+        pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
 };
 
-use super::{EventSource, REPO_ROOT_SELECTION, WorktreeEntry, command::InteractiveCommand};
+use super::{EventSource, Selection, WorktreeEntry, command::InteractiveCommand};
 
 pub struct CrosstermEvents;
 
@@ -91,12 +92,29 @@ pub fn run(repo: &Repo) -> Result<()> {
         }
     };
 
-    if let Some(name) = selection {
-        if name == REPO_ROOT_SELECTION {
-            cd_repo_root(repo)?;
-        } else {
-            let command = CdCommand::new(name, false);
-            command.execute(repo)?;
+    if let Some(selection) = selection {
+        match selection {
+            Selection::RepoRoot => {
+                cd_repo_root(repo)?;
+            }
+            Selection::Worktree(name) => {
+                let command = CdCommand::new(name, false);
+                command.execute(repo)?;
+            }
+            Selection::PrGithub(name) => {
+                let options = PrGithubOptions {
+                    name,
+                    push: true,
+                    draft: false,
+                    fill: false,
+                    web: false,
+                    remote: String::from("origin"),
+                    reviewers: Vec::new(),
+                    extra_args: Vec::new(),
+                };
+                let mut command = PrGithubCommand::new(options);
+                command.execute(repo)?;
+            }
         }
     }
 
