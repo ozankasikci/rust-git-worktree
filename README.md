@@ -21,6 +21,8 @@
 
 - Open a terminal UI for browsing worktrees, focusing actions, and inspecting details without memorizing subcommands.
 - Launch it with the `interactive` command: `rsworktree interactive` (shortcut: `rsworktree i`).
+- Available actions include opening worktrees, removing them, creating PRs, and merging PRs without leaving the TUI.
+- The merge flow lets you decide whether to keep the local branch, delete the remote branch, and clean up the worktree before exiting.
 - ![Interactive mode screenshot](tapes/gifs/interactive-mode.gif)
 
 ## CLI commands

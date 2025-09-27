@@ -42,6 +42,12 @@ pub(crate) const GLOBAL_ACTIONS: [&str; 2] = ["Create worktree", "Cd to root dir
 pub(crate) enum Selection {
     Worktree(String),
     PrGithub(String),
+    MergePrGithub {
+        name: String,
+        remove_local_branch: bool,
+        remove_remote_branch: bool,
+        remove_worktree: bool,
+    },
     RepoRoot,
 }
 
@@ -50,21 +56,31 @@ pub(crate) enum Action {
     Open,
     Remove,
     PrGithub,
+    MergePrGithub,
 }
 
 impl Action {
-    pub(crate) const ALL: [Action; 3] = [Action::Open, Action::Remove, Action::PrGithub];
+    pub(crate) const ALL: [Action; 4] = [
+        Action::Open,
+        Action::Remove,
+        Action::PrGithub,
+        Action::MergePrGithub,
+    ];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Action::Open => "Open",
             Action::Remove => "Remove",
             Action::PrGithub => "PR (GitHub)",
+            Action::MergePrGithub => "Merge PR (GitHub)",
         }
     }
 
     pub(crate) fn requires_selection(self) -> bool {
-        matches!(self, Action::Open | Action::Remove | Action::PrGithub)
+        matches!(
+            self,
+            Action::Open | Action::Remove | Action::PrGithub | Action::MergePrGithub
+        )
     }
 
     pub(crate) fn from_index(index: usize) -> Self {

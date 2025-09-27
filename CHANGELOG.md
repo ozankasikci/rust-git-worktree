@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file. This format
 ## [0.5.3] - 2025-09-28
 
 ### Added
-- Improve interactive ui/ux.
+- Improve interactive UI/UX with a merge PR action and configurable cleanup prompts.
 
 ## [0.5.1] - 2025-09-27
 

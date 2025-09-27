@@ -8,7 +8,7 @@ use ratatui::{
 
 use super::{
     Action, Focus, StatusMessage,
-    dialog::{CreateDialogFocus, CreateDialogView},
+    dialog::{CreateDialogFocus, CreateDialogView, MergeDialogFocus, MergeDialogView},
 };
 
 pub(crate) struct Snapshot {
@@ -29,9 +29,17 @@ pub(crate) struct DetailData {
 
 #[derive(Clone, Debug)]
 pub(crate) enum DialogView {
-    ConfirmRemove { name: String },
-    Info { message: String },
+    ConfirmRemove {
+        name: String,
+    },
+    Info {
+        message: String,
+    },
     Create(CreateDialogView),
+    Merge {
+        name: String,
+        dialog: MergeDialogView,
+    },
 }
 
 impl Snapshot {
@@ -80,6 +88,7 @@ impl Snapshot {
                 DialogView::ConfirmRemove { name } => self.render_confirmation(frame, size, name),
                 DialogView::Info { message } => self.render_info(frame, size, message),
                 DialogView::Create(create) => self.render_create(frame, size, create),
+                DialogView::Merge { name, dialog } => self.render_merge(frame, size, name, dialog),
             }
         }
     }
@@ -318,6 +327,88 @@ impl Snapshot {
         let footer = Paragraph::new(footer_lines)
             .block(Block::default().title("Actions").borders(Borders::ALL));
         frame.render_widget(footer, layout[2]);
+    }
+
+    fn render_merge(&self, frame: &mut Frame, area: Rect, name: &str, dialog: &MergeDialogView) {
+        let popup_area = centered_rect(70, 60, area);
+        frame.render_widget(Clear, popup_area);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Length(6),
+                Constraint::Length(3),
+            ])
+            .split(popup_area);
+
+        let header_lines = vec![
+            Line::from(format!("Merge PR for `{name}`")),
+            Line::from("Choose the cleanup steps to run after merging."),
+        ];
+        let header = Paragraph::new(header_lines).block(
+            Block::default()
+                .title("Merge PR (GitHub)")
+                .borders(Borders::ALL),
+        );
+        frame.render_widget(header, layout[0]);
+
+        let options = [
+            (dialog.remove_local_branch, "Remove local branch"),
+            (dialog.remove_remote_branch, "Remove remote branch"),
+            (dialog.remove_worktree, "Remove worktree"),
+        ];
+
+        let mut option_lines = Vec::new();
+        for (idx, (checked, label)) in options.iter().enumerate() {
+            let checkbox = if *checked { "[x]" } else { "[ ]" };
+            let mut style = Style::default();
+            if dialog.focus == MergeDialogFocus::Options && dialog.options_selected == idx {
+                style = style
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            }
+
+            option_lines.push(Line::from(vec![
+                Span::styled((*checkbox).to_string(), style),
+                Span::raw(" "),
+                Span::styled((*label).to_string(), style),
+            ]));
+        }
+        option_lines.push(Line::from(""));
+        option_lines.push(Line::from(Span::styled(
+            "Space toggles options. Enter confirms.",
+            Style::default().fg(Color::Gray),
+        )));
+
+        let options_block = Paragraph::new(option_lines).block(
+            Block::default()
+                .title("Cleanup options")
+                .borders(Borders::ALL),
+        );
+        frame.render_widget(options_block, layout[1]);
+
+        let buttons = ["Cancel", "Merge"];
+        let mut button_spans = Vec::new();
+        for (idx, label) in buttons.iter().enumerate() {
+            if idx > 0 {
+                button_spans.push(Span::raw("   "));
+            }
+
+            let mut style = Style::default();
+            if dialog.focus == MergeDialogFocus::Buttons && dialog.buttons_selected == idx {
+                let color = if idx == 1 { Color::Green } else { Color::Cyan };
+                style = style
+                    .fg(color)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            }
+
+            button_spans.push(Span::styled(format!("[ {label} ]"), style));
+        }
+
+        let buttons_block = Paragraph::new(Line::from(button_spans))
+            .block(Block::default().title("Actions").borders(Borders::ALL));
+        frame.render_widget(buttons_block, layout[2]);
     }
 
     fn list_highlight_style(&self) -> Style {

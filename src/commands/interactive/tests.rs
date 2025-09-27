@@ -122,6 +122,97 @@ fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
 }
 
 #[test]
+fn selecting_merge_action_collects_cleanup_choices() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        key(KeyCode::Down),
+        char_key(' '),
+        key(KeyCode::Down),
+        char_key(' '),
+        key(KeyCode::Tab),
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(|_| Ok(()), |_, _| panic!("create should not be called"))?;
+
+    match result {
+        Some(Selection::MergePrGithub {
+            name,
+            remove_local_branch,
+            remove_remote_branch,
+            remove_worktree,
+        }) => {
+            assert_eq!(name, "alpha");
+            assert!(remove_local_branch);
+            assert!(remove_remote_branch);
+            assert!(remove_worktree);
+        }
+        other => panic!("unexpected selection: {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn merge_dialog_allows_disabling_local_branch_removal() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        char_key(' '),
+        key(KeyCode::Tab),
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(|_| Ok(()), |_, _| panic!("create should not be called"))?;
+
+    match result {
+        Some(Selection::MergePrGithub {
+            name,
+            remove_local_branch,
+            remove_remote_branch,
+            remove_worktree,
+        }) => {
+            assert_eq!(name, "alpha");
+            assert!(!remove_local_branch);
+            assert!(!remove_remote_branch);
+            assert!(!remove_worktree);
+        }
+        other => panic!("unexpected selection: {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[test]
 fn tabbing_to_actions_removes_selected_worktree() -> Result<()> {
     let backend = TestBackend::new(40, 12);
     let terminal = Terminal::new(backend)?;
