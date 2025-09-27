@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, process::Command};
 
 use color_eyre::{Result, eyre::WrapErr};
 use crossterm::{
@@ -11,14 +11,14 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use crate::{
     Repo,
     commands::{
-        cd::CdCommand,
+        cd::{CdCommand, shell_command},
         create::{CreateCommand, CreateOutcome},
         list::{find_worktrees, format_worktree},
         rm::RemoveCommand,
     },
 };
 
-use super::{EventSource, WorktreeEntry, command::InteractiveCommand};
+use super::{EventSource, REPO_ROOT_SELECTION, WorktreeEntry, command::InteractiveCommand};
 
 pub struct CrosstermEvents;
 
@@ -92,8 +92,12 @@ pub fn run(repo: &Repo) -> Result<()> {
     };
 
     if let Some(name) = selection {
-        let command = CdCommand::new(name, false);
-        command.execute(repo)?;
+        if name == REPO_ROOT_SELECTION {
+            cd_repo_root(repo)?;
+        } else {
+            let command = CdCommand::new(name, false);
+            command.execute(repo)?;
+        }
     }
 
     Ok(())
@@ -103,6 +107,31 @@ fn cleanup_terminal() -> Result<()> {
     disable_raw_mode().wrap_err("failed to disable raw mode")?;
     execute!(io::stdout(), LeaveAlternateScreen).wrap_err("failed to leave alternate screen")?;
     Ok(())
+}
+
+fn cd_repo_root(repo: &Repo) -> Result<()> {
+    let root = repo.root();
+    if !root.exists() {
+        return Err(color_eyre::eyre::eyre!(
+            "repository root `{}` does not exist",
+            root.display()
+        ));
+    }
+
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+
+    let (program, args) = shell_command();
+
+    let mut cmd = Command::new(&program);
+    cmd.args(&args);
+    cmd.current_dir(&canonical);
+    cmd.env("PWD", canonical.as_os_str());
+
+    cmd.status()
+        .wrap_err("failed to spawn subshell")?
+        .success()
+        .then_some(())
+        .ok_or_else(|| color_eyre::eyre::eyre!("subshell exited with a non-zero status"))
 }
 
 fn load_branches(repo: &Repo) -> Result<(Vec<String>, Option<String>)> {
