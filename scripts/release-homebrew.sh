@@ -104,7 +104,9 @@ echo "Updating formula at $FORMULA_PATH"
 
 python3 - "$FORMULA_PATH" "$VERSION" "$SHA256" "$TARBALL_URL" <<'PY'
 import hashlib
+import os
 import sys
+import time
 import urllib.request
 import urllib.error
 import pathlib
@@ -130,18 +132,51 @@ for idx, line in enumerate(text):
 if old_version is None:
     raise SystemExit("could not locate version line in formula")
 
+RETRY_ATTEMPTS = max(1, int(os.getenv("HOMEBREW_ASSET_RETRY_ATTEMPTS", "30")))
+RETRY_DELAY = max(1.0, float(os.getenv("HOMEBREW_ASSET_RETRY_SECONDS", "5")))
+
+
+class AssetUnavailable(Exception):
+    def __init__(self, url, info):
+        super().__init__(f"{info}: {url}")
+        self.url = url
+        self.info = info
+
+
 def download_sha(url):
-    try:
-        with urllib.request.urlopen(url) as resp:
-            data = resp.read()
-    except urllib.error.HTTPError as exc:
-        raise SystemExit(
-            f"failed to download {url} ({exc.code} {exc.reason}). "
-            "The release asset may not be available yet; wait for the release workflow to finish."
-        )
-    except urllib.error.URLError as exc:
-        raise SystemExit(f"failed to download {url}: {exc.reason}")
-    return hashlib.sha256(data).hexdigest()
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(url) as resp:
+                data = resp.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404 and "releases/download" in url and attempt < RETRY_ATTEMPTS:
+                print(
+                    f"asset not available yet at {url} (attempt {attempt}/{RETRY_ATTEMPTS}); "
+                    f"retrying in {RETRY_DELAY:.0f}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(RETRY_DELAY)
+                continue
+            if exc.code == 404 and "releases/download" in url:
+                raise AssetUnavailable(url, f"{exc.code} {exc.reason}")
+            raise SystemExit(
+                f"failed to download {url} ({exc.code} {exc.reason}). "
+                "The release asset may not be available yet; wait for the release workflow to finish."
+            )
+        except urllib.error.URLError as exc:
+            if attempt < RETRY_ATTEMPTS:
+                print(
+                    f"network error downloading {url}: {exc.reason} (attempt {attempt}/{RETRY_ATTEMPTS}); "
+                    f"retrying in {RETRY_DELAY:.0f}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(RETRY_DELAY)
+                continue
+            raise SystemExit(f"failed to download {url}: {exc.reason}")
+        else:
+            return hashlib.sha256(data).hexdigest()
+
+    raise AssetUnavailable(url, f"no response after {RETRY_ATTEMPTS} attempts")
 
 sha_cache = {source_url: source_sha}
 
@@ -161,7 +196,18 @@ def update_pair(i, url_line):
     if j == len(text):
         raise SystemExit("expected sha256 line after url line")
     if updated_url not in sha_cache:
-        sha_cache[updated_url] = download_sha(updated_url)
+        try:
+            sha_cache[updated_url] = download_sha(updated_url)
+        except AssetUnavailable as exc:
+            fallback_url = source_url
+            fallback_sha = source_sha
+            print(
+                f"warning: {exc.info} for {exc.url}; using source tarball {fallback_url} instead",
+                file=sys.stderr,
+            )
+            updated_url = fallback_url
+            url_line = url_line[:url_start] + updated_url + url_line[url_end:]
+            sha_cache[updated_url] = fallback_sha
     new_sha = sha_cache[updated_url]
     sha_line = text[j]
     sha_start = sha_line.find('"') + 1
