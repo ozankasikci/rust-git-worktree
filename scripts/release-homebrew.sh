@@ -106,6 +106,7 @@ python3 - "$FORMULA_PATH" "$VERSION" "$SHA256" "$TARBALL_URL" <<'PY'
 import hashlib
 import sys
 import urllib.request
+import urllib.error
 import pathlib
 
 formula_path = pathlib.Path(sys.argv[1])
@@ -130,8 +131,16 @@ if old_version is None:
     raise SystemExit("could not locate version line in formula")
 
 def download_sha(url):
-    with urllib.request.urlopen(url) as resp:
-        data = resp.read()
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = resp.read()
+    except urllib.error.HTTPError as exc:
+        raise SystemExit(
+            f"failed to download {url} ({exc.code} {exc.reason}). "
+            "The release asset may not be available yet; wait for the release workflow to finish."
+        )
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"failed to download {url}: {exc.reason}")
     return hashlib.sha256(data).hexdigest()
 
 sha_cache = {source_url: source_sha}
