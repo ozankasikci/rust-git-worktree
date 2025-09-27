@@ -60,6 +60,7 @@
 - Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and on your `PATH`.
 - Options:
   - `<name>` — optional explicit worktree to operate on; defaults to the current directory.
+  - `--remove` — delete the remote branch after a successful merge.
   - `--no-push` — skip pushing the branch before creating the PR.
   - `--draft` — open the PR in draft mode.
   - `--fill` — let `gh pr create` auto-populate PR metadata.
