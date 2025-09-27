@@ -24,8 +24,7 @@ pub(crate) struct Snapshot {
 
 #[derive(Clone, Debug)]
 pub(crate) struct DetailData {
-    pub(crate) name: String,
-    pub(crate) path: String,
+    pub(crate) lines: Vec<Line<'static>>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,9 +64,11 @@ impl Snapshot {
             .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
             .split(size);
 
+        let global_height = (super::GLOBAL_ACTIONS.len() as u16 + 2).max(3);
+
         let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(3)])
+            .constraints([Constraint::Length(global_height), Constraint::Min(3)])
             .split(columns[0]);
 
         self.render_global_actions(frame, left[0]);
@@ -104,19 +105,11 @@ impl Snapshot {
             .constraints([Constraint::Min(5), Constraint::Length(3)])
             .split(area);
 
-        let mut lines = Vec::new();
-        if let Some(detail) = &self.detail {
-            lines.push(Line::from(vec![
-                Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(detail.name.clone()),
-            ]));
-            lines.push(Line::from(vec![
-                Span::styled("Path: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(detail.path.clone()),
-            ]));
+        let mut lines = if let Some(detail) = &self.detail {
+            detail.lines.clone()
         } else {
-            lines.push(Line::from("No worktree selected."));
-        }
+            vec![Line::from("No worktree selected.")]
+        };
 
         lines.push(Line::from(""));
         if let Some(status) = &self.status {
@@ -204,12 +197,8 @@ impl Snapshot {
     }
 
     fn render_global_actions(&self, frame: &mut Frame, area: Rect) {
-        let mut spans = Vec::new();
+        let mut lines = Vec::new();
         for (idx, label) in super::GLOBAL_ACTIONS.iter().enumerate() {
-            if idx > 0 {
-                spans.push(Span::raw("  "));
-            }
-
             let mut style = Style::default();
             if self.focus == Focus::GlobalActions && self.global_action_selected == idx {
                 style = style
@@ -217,10 +206,10 @@ impl Snapshot {
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
             }
 
-            spans.push(Span::styled(format!("[{label}]"), style));
+            lines.push(Line::from(vec![Span::styled(format!("[{label}]"), style)]));
         }
 
-        let actions = Paragraph::new(Line::from(spans)).block(
+        let actions = Paragraph::new(lines).block(
             Block::default()
                 .title("Global Actions")
                 .borders(Borders::ALL),

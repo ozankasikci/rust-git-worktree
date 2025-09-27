@@ -54,7 +54,8 @@ impl Focus {
     }
 }
 
-pub(crate) const GLOBAL_ACTIONS: [&str; 1] = ["Create"];
+pub(crate) const GLOBAL_ACTIONS: [&str; 2] = ["Create worktree", "Cd to root dir"];
+pub(crate) const REPO_ROOT_SELECTION: &str = "__RSWORKTREE_REPO_ROOT__";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Action {

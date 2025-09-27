@@ -2,7 +2,16 @@ use std::path::PathBuf;
 
 use color_eyre::{Result, eyre::WrapErr};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Terminal, backend::Backend, widgets::ListState};
+use git2::{
+    Branch, BranchType, Commit, ErrorCode, Oid, Repository, RepositoryState, Status, StatusOptions,
+};
+use ratatui::{
+    Terminal,
+    backend::Backend,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::ListState,
+};
 
 use super::{
     Action, EventSource, Focus, StatusMessage, WorktreeEntry,
@@ -217,13 +226,19 @@ where
                     }
                 }
             }
-            Focus::GlobalActions => {
-                if self.global_action_selected == 0 {
+            Focus::GlobalActions => match self.global_action_selected {
+                0 => {
                     let dialog =
                         CreateDialog::new(&self.branches, &self.worktrees, self.default_branch());
                     self.dialog = Some(Dialog::Create(dialog));
                 }
-            }
+                1 => {
+                    return Ok(LoopControl::Exit(Some(
+                        super::REPO_ROOT_SELECTION.to_string(),
+                    )));
+                }
+                _ => {}
+            },
         }
 
         Ok(LoopControl::Continue)
@@ -489,8 +504,11 @@ where
                 if self.worktrees.is_empty() {
                     return;
                 }
+                if matches!(self.selected, Some(0)) && !super::GLOBAL_ACTIONS.is_empty() {
+                    self.focus = Focus::GlobalActions;
+                    return;
+                }
                 let next = match self.selected {
-                    Some(0) => Some(self.worktrees.len() - 1),
                     Some(idx) => Some(idx - 1),
                     None => Some(self.worktrees.len() - 1),
                 };
@@ -498,7 +516,19 @@ where
                 self.sync_selection(state);
             }
             Focus::Actions => self.move_action(-1),
-            Focus::GlobalActions => self.move_global_action(-1),
+            Focus::GlobalActions => {
+                if self.global_action_selected == 0 {
+                    if !self.worktrees.is_empty() {
+                        self.focus = Focus::Worktrees;
+                        if self.selected.is_none() {
+                            self.selected = Some(0);
+                        }
+                        self.sync_selection(state);
+                    }
+                } else {
+                    self.move_global_action(-1);
+                }
+            }
         }
     }
 
@@ -516,7 +546,20 @@ where
                 self.sync_selection(state);
             }
             Focus::Actions => self.move_action(1),
-            Focus::GlobalActions => self.move_global_action(1),
+            Focus::GlobalActions => {
+                let last_index = super::GLOBAL_ACTIONS.len().saturating_sub(1);
+                if self.global_action_selected >= last_index {
+                    if !self.worktrees.is_empty() {
+                        self.focus = Focus::Worktrees;
+                        if self.selected.is_none() {
+                            self.selected = Some(0);
+                        }
+                        self.sync_selection(state);
+                    }
+                } else {
+                    self.move_global_action(1);
+                }
+            }
         }
     }
 
@@ -568,10 +611,7 @@ where
             .map(|entry| entry.name.clone())
             .collect::<Vec<_>>();
 
-        let detail = self.current_entry().map(|entry| DetailData {
-            name: entry.name.clone(),
-            path: entry.path.display().to_string(),
-        });
+        let detail = self.current_entry().map(build_detail_data);
 
         let dialog = match self.dialog.clone() {
             Some(Dialog::ConfirmRemove { index }) => {
@@ -602,4 +642,379 @@ where
 enum LoopControl {
     Continue,
     Exit(Option<String>),
+}
+
+fn build_detail_data(entry: &WorktreeEntry) -> DetailData {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    lines.push(section_header("Repository"));
+    lines.push(kv_line(
+        "Path",
+        entry.path.display().to_string(),
+        muted_style(),
+    ));
+
+    if !entry.path.exists() {
+        lines.push(Line::default());
+        lines.push(message_line(
+            "Worktree directory not found.",
+            Style::default().fg(Color::Red),
+        ));
+        return DetailData { lines };
+    }
+
+    match Repository::open(&entry.path) {
+        Ok(repo) => append_repository_details(&mut lines, &repo),
+        Err(err) => {
+            lines.push(Line::default());
+            lines.push(message_line(
+                "Unable to open worktree repo.",
+                Style::default().fg(Color::Red),
+            ));
+            lines.push(message_line(err.message().to_string(), muted_style()));
+        }
+    }
+
+    DetailData { lines }
+}
+
+fn append_repository_details(lines: &mut Vec<Line<'static>>, repo: &Repository) {
+    let mut repo_lines = describe_head(repo);
+
+    if let Some(state_line) = describe_repository_state(repo) {
+        repo_lines.push(state_line);
+    }
+
+    if !repo_lines.is_empty() {
+        lines.push(Line::default());
+        lines.append(&mut repo_lines);
+    }
+
+    if let Some(status_line) = summarize_worktree(repo) {
+        lines.push(Line::default());
+        lines.push(section_header("Working Tree"));
+        lines.push(status_line);
+    }
+}
+
+fn describe_head(repo: &Repository) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    match repo.head() {
+        Ok(head) => {
+            if head.is_branch() {
+                let branch_name = head.shorthand().unwrap_or("(unnamed)").to_string();
+                lines.push(kv_line(
+                    "Branch",
+                    branch_name.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ));
+
+                if let Ok(branch) = repo.find_branch(&branch_name, BranchType::Local) {
+                    match branch.upstream() {
+                        Ok(upstream) => lines.push(build_tracking_line(repo, &branch, &upstream)),
+                        Err(err) => {
+                            if err.code() == ErrorCode::NotFound {
+                                lines.push(kv_line(
+                                    "Tracking",
+                                    "(none)",
+                                    Style::default().fg(Color::DarkGray),
+                                ));
+                            } else {
+                                lines.push(kv_line(
+                                    "Tracking",
+                                    "Unavailable",
+                                    Style::default().fg(Color::Red),
+                                ));
+                                lines.push(message_line(err.message().to_string(), muted_style()));
+                            }
+                        }
+                    }
+                }
+            } else if head.is_tag() {
+                let tag_name = head.shorthand().unwrap_or("(tag)");
+                lines.push(kv_line(
+                    "Branch",
+                    format!("tag {tag_name}"),
+                    Style::default().fg(Color::Magenta),
+                ));
+            } else {
+                lines.push(kv_line(
+                    "Branch",
+                    "(detached)",
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+
+            match head.peel_to_commit() {
+                Ok(commit) => lines.extend(describe_commit(&commit)),
+                Err(err) => lines.push(message_line(
+                    format!("HEAD is not a commit ({})", err.message()),
+                    Style::default().fg(Color::Red),
+                )),
+            }
+        }
+        Err(err) => {
+            if err.code() == ErrorCode::UnbornBranch {
+                lines.push(kv_line(
+                    "Branch",
+                    "(unborn)",
+                    Style::default().fg(Color::Yellow),
+                ));
+            } else {
+                lines.push(kv_line(
+                    "Branch",
+                    "Unavailable",
+                    Style::default().fg(Color::Red),
+                ));
+                lines.push(message_line(err.message().to_string(), muted_style()));
+            }
+        }
+    }
+
+    lines
+}
+
+fn build_tracking_line(
+    repo: &Repository,
+    branch: &Branch<'_>,
+    upstream: &Branch<'_>,
+) -> Line<'static> {
+    let upstream_name = match upstream.name() {
+        Ok(Some(name)) => name.to_string(),
+        Ok(None) => String::from("(non-UTF8)"),
+        Err(_) => upstream
+            .get()
+            .shorthand()
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| String::from("(unknown)")),
+    };
+
+    let ahead_behind = branch
+        .get()
+        .target()
+        .zip(upstream.get().target())
+        .and_then(|(local, remote)| repo.graph_ahead_behind(local, remote).ok());
+
+    let mut text = upstream_name;
+    if let Some((ahead, behind)) = ahead_behind {
+        let mut parts = Vec::new();
+        if ahead > 0 {
+            parts.push(format!("ahead {ahead}"));
+        }
+        if behind > 0 {
+            parts.push(format!("behind {behind}"));
+        }
+        if !parts.is_empty() {
+            text.push_str(&format!(" ({})", parts.join(", ")));
+        }
+    }
+
+    kv_line("Tracking", text, Style::default().fg(Color::LightBlue))
+}
+
+fn describe_commit(commit: &Commit<'_>) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let summary = commit.summary().unwrap_or("(no summary)");
+    let summary = summary.lines().next().unwrap_or(summary).trim();
+
+    let mut head_value = vec![Span::styled(
+        short_id(commit.id()),
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+    )];
+    if !summary.is_empty() {
+        head_value.push(Span::raw(format!("  {summary}")));
+    }
+    lines.push(kv_line_spans("HEAD", head_value));
+
+    let author = commit.author();
+    let author_name = author.name().unwrap_or("Unknown").trim();
+    let author_email = author.email().unwrap_or("").trim();
+
+    if !author_name.is_empty() || !author_email.is_empty() {
+        let mut author_text = String::new();
+        if !author_name.is_empty() {
+            author_text.push_str(author_name);
+        }
+        if !author_email.is_empty() {
+            if !author_text.is_empty() {
+                author_text.push(' ');
+            }
+            author_text.push('<');
+            author_text.push_str(author_email);
+            author_text.push('>');
+        }
+
+        lines.push(kv_line("Author", author_text, muted_style()));
+    }
+
+    lines
+}
+
+fn describe_repository_state(repo: &Repository) -> Option<Line<'static>> {
+    let state = repo.state();
+    if state == RepositoryState::Clean {
+        return None;
+    }
+
+    let label = match state {
+        RepositoryState::Merge => "MERGING",
+        RepositoryState::Revert => "REVERTING",
+        RepositoryState::RevertSequence => "REVERTING",
+        RepositoryState::CherryPick => "CHERRY-PICKING",
+        RepositoryState::CherryPickSequence => "CHERRY-PICKING",
+        RepositoryState::Bisect => "BISECTING",
+        RepositoryState::Rebase => "REBASING",
+        RepositoryState::RebaseInteractive => "REBASING",
+        RepositoryState::RebaseMerge => "REBASING",
+        RepositoryState::ApplyMailbox => "APPLYING MAILBOX",
+        RepositoryState::ApplyMailboxOrRebase => "APPLYING",
+        _ => "PENDING",
+    };
+
+    Some(kv_line(
+        "Git State",
+        label,
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn summarize_worktree(repo: &Repository) -> Option<Line<'static>> {
+    let mut options = StatusOptions::new();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
+
+    let Ok(statuses) = repo.statuses(Some(&mut options)) else {
+        return Some(kv_line(
+            "State",
+            "Unable to read status",
+            Style::default().fg(Color::Red),
+        ));
+    };
+
+    let mut staged = 0usize;
+    let mut unstaged = 0usize;
+    let mut untracked = 0usize;
+    let mut conflicts = 0usize;
+
+    for entry in statuses.iter() {
+        let status = entry.status();
+        if status.intersects(
+            Status::INDEX_NEW
+                | Status::INDEX_MODIFIED
+                | Status::INDEX_DELETED
+                | Status::INDEX_RENAMED
+                | Status::INDEX_TYPECHANGE,
+        ) {
+            staged += 1;
+        }
+
+        if status.intersects(
+            Status::WT_MODIFIED | Status::WT_DELETED | Status::WT_RENAMED | Status::WT_TYPECHANGE,
+        ) {
+            unstaged += 1;
+        }
+
+        if status.contains(Status::WT_NEW) {
+            untracked += 1;
+        }
+
+        if status.contains(Status::CONFLICTED) {
+            conflicts += 1;
+        }
+    }
+
+    let clean = staged == 0 && unstaged == 0 && untracked == 0 && conflicts == 0;
+
+    if clean {
+        return Some(kv_line("State", "Clean", Style::default().fg(Color::Green)));
+    }
+
+    let mut parts = Vec::new();
+    if staged > 0 {
+        parts.push(pluralize(staged, "staged change", "staged changes"));
+    }
+    if unstaged > 0 {
+        parts.push(pluralize(unstaged, "unstaged change", "unstaged changes"));
+    }
+    if untracked > 0 {
+        parts.push(pluralize(untracked, "untracked file", "untracked files"));
+    }
+    if conflicts > 0 {
+        parts.push(pluralize(conflicts, "conflict", "conflicts"));
+    }
+
+    let mut style = Style::default().fg(Color::Yellow);
+    if conflicts > 0 {
+        style = style.fg(Color::Red).add_modifier(Modifier::BOLD);
+    }
+
+    let text = if parts.is_empty() {
+        String::from("Changes present")
+    } else {
+        parts.join(" | ")
+    };
+
+    Some(kv_line("State", text, style))
+}
+
+fn section_header(title: &str) -> Line<'static> {
+    Line::from(vec![Span::styled(
+        format!("> {}", title.to_uppercase()),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )])
+}
+
+fn kv_line(label: &str, value: impl Into<String>, value_style: Style) -> Line<'static> {
+    kv_line_spans(label, vec![Span::styled(value.into(), value_style)])
+}
+
+fn kv_line_spans(label: &str, mut value_spans: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = Vec::with_capacity(value_spans.len() + 3);
+    spans.push(Span::raw("  "));
+    spans.push(Span::styled(
+        format!("{:<11}", format!("{label}:")),
+        label_style(),
+    ));
+    spans.push(Span::raw(" "));
+    spans.append(&mut value_spans);
+    Line::from(spans)
+}
+
+fn message_line(text: impl Into<String>, style: Style) -> Line<'static> {
+    Line::from(vec![Span::raw("  "), Span::styled(text.into(), style)])
+}
+
+fn label_style() -> Style {
+    Style::default()
+        .fg(Color::Gray)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn muted_style() -> Style {
+    Style::default().fg(Color::Gray)
+}
+
+fn short_id(oid: Oid) -> String {
+    let id = oid.to_string();
+    id.chars().take(7).collect()
+}
+
+fn pluralize(count: usize, singular: &str, plural: &str) -> String {
+    if count == 1 {
+        format!("{count} {singular}")
+    } else {
+        format!("{count} {plural}")
+    }
 }
