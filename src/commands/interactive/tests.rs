@@ -58,7 +58,7 @@ fn returns_first_worktree_when_enter_pressed_immediately() -> Result<()> {
     let selection = command
         .run(|_| Ok(()), |_, _| panic!("create should not be called"))?
         .expect("expected selection");
-    assert_eq!(selection, "alpha");
+    assert_eq!(selection, Selection::Worktree(String::from("alpha")));
 
     Ok(())
 }
@@ -81,7 +81,42 @@ fn navigates_down_before_selecting() -> Result<()> {
     let selection = command
         .run(|_| Ok(()), |_, _| panic!("create should not be called"))?
         .expect("expected selection");
-    assert_eq!(selection, "beta");
+    assert_eq!(selection, Selection::Worktree(String::from("beta")));
+
+    Ok(())
+}
+
+#[test]
+fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha", "beta"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut removed = Vec::new();
+    let result = command.run(
+        |name| {
+            removed.push(name.to_owned());
+            Ok(())
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
+
+    assert!(removed.is_empty(), "remove should not be triggered");
+    assert_eq!(result, Some(Selection::PrGithub(String::from("alpha"))));
 
     Ok(())
 }
@@ -199,7 +234,7 @@ fn create_action_adds_new_worktree() -> Result<()> {
         },
     )?;
 
-    assert_eq!(result, Some(String::from("new")));
+    assert_eq!(result, Some(Selection::Worktree(String::from("new"))));
     assert_eq!(
         created,
         vec![(String::from("new"), Some(String::from("main")))]
@@ -260,7 +295,7 @@ fn cd_to_root_global_action_exits() -> Result<()> {
 
     let result = command.run(|_| Ok(()), |_, _| Ok(()))?;
 
-    assert_eq!(result, Some(String::from(super::REPO_ROOT_SELECTION)));
+    assert_eq!(result, Some(Selection::RepoRoot));
 
     Ok(())
 }
@@ -287,7 +322,7 @@ fn up_from_top_moves_to_global_actions() -> Result<()> {
 
     let result = command.run(|_| Ok(()), |_, _| Ok(()))?;
 
-    assert_eq!(result, Some(String::from(super::REPO_ROOT_SELECTION)));
+    assert_eq!(result, Some(Selection::RepoRoot));
 
     Ok(())
 }
