@@ -25,7 +25,6 @@ require() {
 
 require git
 require curl
-require perl
 
 checksum_cmd=""
 if command -v shasum >/dev/null 2>&1; then
@@ -103,12 +102,82 @@ SHA256=$($checksum_cmd "$tarball" | awk '{print $1}')
 
 echo "Updating formula at $FORMULA_PATH"
 
-perl -0pi -e 's/^  url "[^"]+"/  url "'"$TARBALL_URL"'"/' "$FORMULA_PATH"
-perl -0pi -e 's/^  sha256 "[^"]+"/  sha256 "'"$SHA256"'"/' "$FORMULA_PATH"
-perl -0pi -e 's/^  version "[^"]+"/  version "'"$VERSION"'"/' "$FORMULA_PATH" 2>/dev/null || true
+python3 - "$FORMULA_PATH" "$VERSION" "$SHA256" "$TARBALL_URL" <<'PY'
+import hashlib
+import sys
+import urllib.request
+import pathlib
 
-# Remove stale bottle block so new bottles can be generated after the update.
-perl -0pi -e 's/^bottle do\n.*?^end\n\n//ms' "$FORMULA_PATH" || true
+formula_path = pathlib.Path(sys.argv[1])
+new_version = sys.argv[2]
+source_sha = sys.argv[3]
+source_url = sys.argv[4]
+
+text = formula_path.read_text().splitlines()
+
+version_line_idx = None
+old_version = None
+for idx, line in enumerate(text):
+    if line.strip().startswith("version "):
+        version_line_idx = idx
+        start = line.find('"') + 1
+        end = line.rfind('"')
+        old_version = line[start:end]
+        text[idx] = line[:start] + new_version + line[end:]
+        break
+
+if old_version is None:
+    raise SystemExit("could not locate version line in formula")
+
+def download_sha(url):
+    with urllib.request.urlopen(url) as resp:
+        data = resp.read()
+    return hashlib.sha256(data).hexdigest()
+
+sha_cache = {source_url: source_sha}
+
+def update_pair(i, url_line):
+    url_start = url_line.find('"') + 1
+    url_end = url_line.rfind('"')
+    current_url = url_line[url_start:url_end]
+    updated_url = current_url.replace(old_version, new_version)
+    if updated_url != current_url:
+        url_line = url_line[:url_start] + updated_url + url_line[url_end:]
+    else:
+        updated_url = current_url
+    # find sha line following
+    j = i + 1
+    while j < len(text) and "sha256" not in text[j]:
+        j += 1
+    if j == len(text):
+        raise SystemExit("expected sha256 line after url line")
+    if updated_url not in sha_cache:
+        sha_cache[updated_url] = download_sha(updated_url)
+    new_sha = sha_cache[updated_url]
+    sha_line = text[j]
+    sha_start = sha_line.find('"') + 1
+    sha_end = sha_line.rfind('"')
+    text[j] = sha_line[:sha_start] + new_sha + sha_line[sha_end:]
+    text[i] = url_line
+
+for idx, line in enumerate(text):
+    stripped = line.strip()
+    if stripped.startswith("url "):
+        update_pair(idx, line)
+
+formula_path.write_text("\n".join(text) + "\n")
+PY
+
+# Remove stale bottle block to force regeneration
+python3 - "$FORMULA_PATH" <<'PY'
+from pathlib import Path
+import re
+path = Path(__import__('sys').argv[1])
+text = path.read_text()
+updated = re.sub(r"^bottle do\n.*?^end\n\n", "", text, flags=re.MULTILINE | re.DOTALL)
+if updated != text:
+    path.write_text(updated)
+PY
 
 git -C "$TAP_PATH" add "$FORMULA_PATH"
 
