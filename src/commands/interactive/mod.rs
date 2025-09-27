@@ -55,26 +55,34 @@ impl Focus {
 }
 
 pub(crate) const GLOBAL_ACTIONS: [&str; 2] = ["Create worktree", "Cd to root dir"];
-pub(crate) const REPO_ROOT_SELECTION: &str = "__RSWORKTREE_REPO_ROOT__";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Selection {
+    Worktree(String),
+    PrGithub(String),
+    RepoRoot,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Action {
     Open,
     Remove,
+    PrGithub,
 }
 
 impl Action {
-    pub(crate) const ALL: [Action; 2] = [Action::Open, Action::Remove];
+    pub(crate) const ALL: [Action; 3] = [Action::Open, Action::Remove, Action::PrGithub];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Action::Open => "Open",
             Action::Remove => "Remove",
+            Action::PrGithub => "PR (GitHub)",
         }
     }
 
     pub(crate) fn requires_selection(self) -> bool {
-        matches!(self, Action::Open | Action::Remove)
+        matches!(self, Action::Open | Action::Remove | Action::PrGithub)
     }
 
     pub(crate) fn from_index(index: usize) -> Self {
