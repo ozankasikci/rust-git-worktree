@@ -236,4 +236,3 @@ fn install_stub_gh() -> Result<StubGh, Box<dyn Error>> {
         log_path: gh_log,
     })
 }
-
