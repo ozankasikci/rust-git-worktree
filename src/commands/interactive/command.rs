@@ -167,9 +167,9 @@ where
             KeyCode::Esc | KeyCode::Char('q') => Ok(LoopControl::Exit(None)),
             KeyCode::Tab | KeyCode::BackTab => {
                 if key.code == KeyCode::Tab {
-                    self.focus = self.focus.next();
+                    self.focus_forward();
                 } else {
-                    self.focus = self.focus.prev();
+                    self.focus_backward();
                 }
                 Ok(LoopControl::Continue)
             }
@@ -200,6 +200,52 @@ where
             KeyCode::Enter => self.handle_enter(),
             _ => Ok(LoopControl::Continue),
         }
+    }
+
+    fn focus_forward(&mut self) {
+        self.focus = match self.focus {
+            Focus::Worktrees => {
+                if self.selected.is_some() {
+                    Focus::Actions
+                } else if super::GLOBAL_ACTIONS.is_empty() {
+                    Focus::Worktrees
+                } else {
+                    Focus::GlobalActions
+                }
+            }
+            Focus::Actions => Focus::Worktrees,
+            Focus::GlobalActions => {
+                if self.selected.is_some() {
+                    Focus::Actions
+                } else {
+                    Focus::Worktrees
+                }
+            }
+        };
+    }
+
+    fn focus_backward(&mut self) {
+        self.focus = match self.focus {
+            Focus::Worktrees => {
+                if self.selected.is_some() {
+                    Focus::Actions
+                } else if super::GLOBAL_ACTIONS.is_empty() {
+                    Focus::Worktrees
+                } else {
+                    Focus::GlobalActions
+                }
+            }
+            Focus::Actions => {
+                if self.selected.is_some() {
+                    Focus::Worktrees
+                } else if super::GLOBAL_ACTIONS.is_empty() {
+                    Focus::Actions
+                } else {
+                    Focus::GlobalActions
+                }
+            }
+            Focus::GlobalActions => Focus::Worktrees,
+        };
     }
 
     fn handle_enter(&mut self) -> Result<LoopControl> {

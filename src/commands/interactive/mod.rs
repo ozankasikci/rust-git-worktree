@@ -36,24 +36,6 @@ pub(crate) enum Focus {
     GlobalActions,
 }
 
-impl Focus {
-    pub(crate) fn next(self) -> Self {
-        match self {
-            Focus::Worktrees => Focus::Actions,
-            Focus::Actions => Focus::GlobalActions,
-            Focus::GlobalActions => Focus::Worktrees,
-        }
-    }
-
-    pub(crate) fn prev(self) -> Self {
-        match self {
-            Focus::Worktrees => Focus::GlobalActions,
-            Focus::Actions => Focus::Worktrees,
-            Focus::GlobalActions => Focus::Actions,
-        }
-    }
-}
-
 pub(crate) const GLOBAL_ACTIONS: [&str; 2] = ["Create worktree", "Cd to root dir"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
