@@ -304,9 +304,34 @@ fn cd_to_root_global_action_exits() -> Result<()> {
 fn up_from_top_moves_to_global_actions() -> Result<()> {
     let backend = TestBackend::new(40, 12);
     let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![key(KeyCode::Up), key(KeyCode::Enter)]);
+
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(|_| Ok(()), |_, _| Ok(()))?;
+
+    assert_eq!(result, Some(String::from(super::REPO_ROOT_SELECTION)));
+
+    Ok(())
+}
+
+#[test]
+fn up_from_top_after_tabbing_picks_last_global_action() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Tab),
+        key(KeyCode::Tab),
         key(KeyCode::Up),
-        key(KeyCode::Right),
         key(KeyCode::Enter),
     ]);
 

@@ -520,6 +520,7 @@ where
                 }
                 if matches!(self.selected, Some(0)) && !super::GLOBAL_ACTIONS.is_empty() {
                     self.focus = Focus::GlobalActions;
+                    self.global_action_selected = super::GLOBAL_ACTIONS.len().saturating_sub(1);
                     return;
                 }
                 let next = match self.selected {
@@ -531,15 +532,7 @@ where
             }
             Focus::Actions => self.move_action(-1),
             Focus::GlobalActions => {
-                if self.global_action_selected == 0 {
-                    if !self.worktrees.is_empty() {
-                        self.focus = Focus::Worktrees;
-                        if self.selected.is_none() {
-                            self.selected = Some(0);
-                        }
-                        self.sync_selection(state);
-                    }
-                } else {
+                if self.global_action_selected > 0 {
                     self.move_global_action(-1);
                 }
             }
