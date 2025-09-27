@@ -15,7 +15,7 @@ use ratatui::{
 
 use super::{
     Action, EventSource, Focus, Selection, StatusMessage, WorktreeEntry,
-    dialog::{CreateDialog, CreateDialogFocus, Dialog},
+    dialog::{CreateDialog, CreateDialogFocus, Dialog, MergeDialog, MergeDialogFocus},
     view::{DetailData, DialogView, Snapshot},
 };
 
@@ -148,6 +148,14 @@ where
                     if let Event::Key(key) = event {
                         if key.kind == KeyEventKind::Press {
                             self.handle_create_key(key, state, on_create)?;
+                        }
+                    }
+                    return Ok(LoopControl::Continue);
+                }
+                Dialog::Merge(_) => {
+                    if let Event::Key(key) = event {
+                        if key.kind == KeyEventKind::Press {
+                            return self.handle_merge_dialog_key(key);
                         }
                     }
                     return Ok(LoopControl::Continue);
@@ -285,6 +293,13 @@ where
                             ))));
                         }
                         self.status = Some(StatusMessage::info("No worktree selected."));
+                    }
+                    Action::MergePrGithub => {
+                        if let Some(index) = self.selected {
+                            self.dialog = Some(Dialog::Merge(MergeDialog::new(index)));
+                        } else {
+                            self.status = Some(StatusMessage::info("No worktree selected."));
+                        }
                     }
                 }
             }
@@ -472,6 +487,89 @@ where
         }
 
         Ok(())
+    }
+
+    fn handle_merge_dialog_key(&mut self, key: KeyEvent) -> Result<LoopControl> {
+        let dialog_option = self.dialog.take();
+        let Some(Dialog::Merge(mut dialog)) = dialog_option else {
+            self.dialog = dialog_option;
+            return Ok(LoopControl::Continue);
+        };
+
+        let mut reinstate = true;
+        let mut outcome = LoopControl::Continue;
+
+        match key.code {
+            KeyCode::Esc => {
+                reinstate = false;
+                self.status = Some(StatusMessage::info("Merge cancelled."));
+            }
+            KeyCode::Tab => dialog.focus_next(),
+            KeyCode::BackTab => dialog.focus_prev(),
+            KeyCode::Up | KeyCode::Char('k') => match dialog.focus {
+                MergeDialogFocus::Options => dialog.move_option(-1),
+                MergeDialogFocus::Buttons => dialog.focus = MergeDialogFocus::Options,
+            },
+            KeyCode::Down | KeyCode::Char('j') => match dialog.focus {
+                MergeDialogFocus::Options => dialog.move_option(1),
+                MergeDialogFocus::Buttons => {}
+            },
+            KeyCode::Left => {
+                if dialog.focus == MergeDialogFocus::Buttons {
+                    dialog.move_button(-1);
+                }
+            }
+            KeyCode::Right => {
+                if dialog.focus == MergeDialogFocus::Buttons {
+                    dialog.move_button(1);
+                }
+            }
+            KeyCode::Char(' ') => {
+                if dialog.focus == MergeDialogFocus::Options {
+                    dialog.toggle_selected_option();
+                }
+            }
+            KeyCode::Enter => match dialog.focus {
+                MergeDialogFocus::Options => dialog.toggle_selected_option(),
+                MergeDialogFocus::Buttons => {
+                    if dialog.buttons_selected == 0 {
+                        reinstate = false;
+                        self.status = Some(StatusMessage::info("Merge cancelled."));
+                    } else {
+                        match self.build_merge_selection(&dialog) {
+                            Some(selection) => {
+                                reinstate = false;
+                                outcome = LoopControl::Exit(Some(selection));
+                            }
+                            None => {
+                                reinstate = false;
+                                self.status = Some(StatusMessage::error(
+                                    "Selected worktree no longer exists.",
+                                ));
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {}
+        }
+
+        if reinstate {
+            self.dialog = Some(Dialog::Merge(dialog));
+        }
+
+        Ok(outcome)
+    }
+
+    fn build_merge_selection(&self, dialog: &MergeDialog) -> Option<Selection> {
+        self.worktrees
+            .get(dialog.index)
+            .map(|entry| Selection::MergePrGithub {
+                name: entry.name.clone(),
+                remove_local_branch: dialog.remove_local_branch(),
+                remove_remote_branch: dialog.remove_remote_branch(),
+                remove_worktree: dialog.remove_worktree(),
+            })
     }
 
     fn submit_create<G>(
@@ -680,6 +778,14 @@ where
             }
             Some(Dialog::Info { message }) => Some(DialogView::Info { message }),
             Some(Dialog::Create(dialog)) => Some(DialogView::Create(dialog.into())),
+            Some(Dialog::Merge(dialog)) => {
+                self.worktrees
+                    .get(dialog.index)
+                    .map(|entry| DialogView::Merge {
+                        name: entry.name.clone(),
+                        dialog: dialog.into(),
+                    })
+            }
             None => None,
         };
 

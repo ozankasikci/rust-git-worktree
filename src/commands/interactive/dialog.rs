@@ -189,9 +189,119 @@ impl CreateDialogView {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MergeDialogFocus {
+    Options,
+    Buttons,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MergeDialog {
+    pub(crate) index: usize,
+    pub(crate) focus: MergeDialogFocus,
+    pub(crate) options_selected: usize,
+    pub(crate) buttons_selected: usize,
+    pub(crate) remove_local_branch: bool,
+    pub(crate) remove_remote_branch: bool,
+    pub(crate) remove_worktree: bool,
+}
+
+impl MergeDialog {
+    const OPTION_COUNT: usize = 3;
+    const BUTTON_COUNT: usize = 2;
+
+    pub(crate) fn new(index: usize) -> Self {
+        Self {
+            index,
+            focus: MergeDialogFocus::Options,
+            options_selected: 0,
+            buttons_selected: 1,
+            remove_local_branch: true,
+            remove_remote_branch: false,
+            remove_worktree: false,
+        }
+    }
+
+    pub(crate) fn focus_next(&mut self) {
+        self.focus = match self.focus {
+            MergeDialogFocus::Options => MergeDialogFocus::Buttons,
+            MergeDialogFocus::Buttons => MergeDialogFocus::Options,
+        };
+    }
+
+    pub(crate) fn focus_prev(&mut self) {
+        self.focus_next();
+    }
+
+    pub(crate) fn move_option(&mut self, delta: isize) {
+        let len = Self::OPTION_COUNT as isize;
+        let current = self.options_selected as isize;
+        let next = (current + delta).rem_euclid(len);
+        self.options_selected = next as usize;
+    }
+
+    pub(crate) fn move_button(&mut self, delta: isize) {
+        let len = Self::BUTTON_COUNT as isize;
+        let current = self.buttons_selected as isize;
+        let next = (current + delta).rem_euclid(len);
+        self.buttons_selected = next as usize;
+    }
+
+    pub(crate) fn toggle_selected_option(&mut self) {
+        match self.options_selected {
+            0 => self.remove_local_branch = !self.remove_local_branch,
+            1 => self.remove_remote_branch = !self.remove_remote_branch,
+            2 => self.remove_worktree = !self.remove_worktree,
+            _ => {}
+        }
+    }
+
+    pub(crate) fn remove_local_branch(&self) -> bool {
+        self.remove_local_branch
+    }
+
+    pub(crate) fn remove_remote_branch(&self) -> bool {
+        self.remove_remote_branch
+    }
+
+    pub(crate) fn remove_worktree(&self) -> bool {
+        self.remove_worktree
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MergeDialogView {
+    pub(crate) focus: MergeDialogFocus,
+    pub(crate) options_selected: usize,
+    pub(crate) buttons_selected: usize,
+    pub(crate) remove_local_branch: bool,
+    pub(crate) remove_remote_branch: bool,
+    pub(crate) remove_worktree: bool,
+}
+
+impl From<&MergeDialog> for MergeDialogView {
+    fn from(dialog: &MergeDialog) -> Self {
+        Self {
+            focus: dialog.focus,
+            options_selected: dialog.options_selected,
+            buttons_selected: dialog.buttons_selected,
+            remove_local_branch: dialog.remove_local_branch,
+            remove_remote_branch: dialog.remove_remote_branch,
+            remove_worktree: dialog.remove_worktree,
+        }
+    }
+}
+
+impl From<MergeDialog> for MergeDialogView {
+    fn from(dialog: MergeDialog) -> Self {
+        Self::from(&dialog)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum Dialog {
     ConfirmRemove { index: usize },
     Info { message: String },
     Create(CreateDialog),
+    Merge(MergeDialog),
 }

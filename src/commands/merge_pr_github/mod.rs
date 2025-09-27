@@ -12,6 +12,7 @@ use crate::{
 #[derive(Debug)]
 pub struct MergePrGithubCommand<R = SystemCommandRunner> {
     name: String,
+    remove_local_branch: bool,
     remove_remote_branch: bool,
     runner: R,
 }
@@ -29,9 +30,14 @@ where
     pub fn with_runner(name: String, runner: R) -> Self {
         Self {
             name,
+            remove_local_branch: true,
             remove_remote_branch: false,
             runner,
         }
+    }
+
+    pub fn disable_remove_local(&mut self) {
+        self.remove_local_branch = false;
     }
 
     pub fn enable_remove_remote(&mut self) {
@@ -144,20 +150,22 @@ where
         worktree_path: &Path,
         pr_number: u64,
     ) -> color_eyre::Result<()> {
-        let args = vec![
+        let mut args = vec![
             "pr".to_owned(),
             "merge".to_owned(),
             pr_number.to_string(),
             "--merge".to_owned(),
-            "--delete-branch".to_owned(),
         ];
+        if self.remove_local_branch {
+            args.push("--delete-branch".to_owned());
+        }
 
         let output = self
             .runner
             .run("gh", repo_path, &args)
             .wrap_err("failed to run `gh pr merge`")?;
 
-        let branch_delete_failed = gh_branch_delete_failure(&output);
+        let branch_delete_failed = self.remove_local_branch && gh_branch_delete_failure(&output);
 
         if !output.success && !branch_delete_failed {
             return Err(command_failure("gh", &args, &output));
@@ -559,6 +567,87 @@ mod tests {
                         "--delete".into(),
                         "feature/remove".into(),
                     ],
+                },
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn keeps_local_branch_when_disabled() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let repo_root = repo.root().to_path_buf();
+        let worktree_path = repo.worktrees_dir().join("feature/keep-local");
+        fs::create_dir_all(&worktree_path)?;
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.extend([
+            Ok(CommandOutput {
+                stdout: "feature/keep-local\n".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: "[{\"number\":123}]".into(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+        ]);
+
+        let mut command = MergePrGithubCommand::with_runner("feature/keep-local".into(), runner);
+        command.disable_remove_local();
+        command.execute(&repo)?;
+
+        assert_eq!(
+            command.runner.calls,
+            vec![
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root.clone(),
+                    args: vec![
+                        "pr".into(),
+                        "list".into(),
+                        "--head".into(),
+                        "feature/keep-local".into(),
+                        "--state".into(),
+                        "open".into(),
+                        "--json".into(),
+                        "number".into(),
+                        "--limit".into(),
+                        "1".into(),
+                    ],
+                },
+                RecordedCall {
+                    program: "gh".into(),
+                    dir: repo_root,
+                    args: vec!["pr".into(), "merge".into(), "123".into(), "--merge".into()],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path,
+                    args: vec!["switch".into(), "feature/keep-local".into()],
                 },
             ]
         );

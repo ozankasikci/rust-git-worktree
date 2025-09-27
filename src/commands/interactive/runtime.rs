@@ -14,6 +14,7 @@ use crate::{
         cd::{CdCommand, shell_command},
         create::{CreateCommand, CreateOutcome},
         list::{find_worktrees, format_worktree},
+        merge_pr_github::MergePrGithubCommand,
         pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
@@ -114,6 +115,26 @@ pub fn run(repo: &Repo) -> Result<()> {
                 };
                 let mut command = PrGithubCommand::new(options);
                 command.execute(repo)?;
+            }
+            Selection::MergePrGithub {
+                name,
+                remove_local_branch,
+                remove_remote_branch,
+                remove_worktree,
+            } => {
+                let mut command = MergePrGithubCommand::new(name.clone());
+                if !remove_local_branch {
+                    command.disable_remove_local();
+                }
+                if remove_remote_branch {
+                    command.enable_remove_remote();
+                }
+                command.execute(repo)?;
+
+                if remove_worktree {
+                    let remove_command = RemoveCommand::new(name, false);
+                    remove_command.execute(repo)?;
+                }
             }
         }
     }
