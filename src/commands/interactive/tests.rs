@@ -276,10 +276,7 @@ fn cancelling_create_leaves_state_unchanged() -> Result<()> {
 fn cd_to_root_global_action_exits() -> Result<()> {
     let backend = TestBackend::new(40, 12);
     let terminal = Terminal::new(backend)?;
-    let events = StubEvents::new(vec![
-        key(KeyCode::Up),
-        key(KeyCode::Enter),
-    ]);
+    let events = StubEvents::new(vec![key(KeyCode::Up), key(KeyCode::Enter)]);
 
     let worktrees = entries(&["alpha"]);
     let command = InteractiveCommand::new(
