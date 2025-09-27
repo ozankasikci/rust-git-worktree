@@ -203,8 +203,8 @@ fn create_action_adds_new_worktree() -> Result<()> {
     let backend = TestBackend::new(60, 18);
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
-        key(KeyCode::Tab),
-        key(KeyCode::Tab),
+        key(KeyCode::Up),
+        key(KeyCode::Up),
         key(KeyCode::Enter),
         char_key('n'),
         char_key('e'),
@@ -248,8 +248,8 @@ fn cancelling_create_leaves_state_unchanged() -> Result<()> {
     let backend = TestBackend::new(60, 18);
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
-        key(KeyCode::Tab),
-        key(KeyCode::Tab),
+        key(KeyCode::Up),
+        key(KeyCode::Up),
         key(KeyCode::Enter),
         key(KeyCode::Esc),
         key(KeyCode::Esc),
@@ -277,9 +277,7 @@ fn cd_to_root_global_action_exits() -> Result<()> {
     let backend = TestBackend::new(40, 12);
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
-        key(KeyCode::Tab),
-        key(KeyCode::Tab),
-        key(KeyCode::Right),
+        key(KeyCode::Up),
         key(KeyCode::Enter),
     ]);
 
@@ -328,7 +326,6 @@ fn up_from_top_after_tabbing_picks_last_global_action() -> Result<()> {
     let backend = TestBackend::new(40, 12);
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
-        key(KeyCode::Tab),
         key(KeyCode::Tab),
         key(KeyCode::Tab),
         key(KeyCode::Up),

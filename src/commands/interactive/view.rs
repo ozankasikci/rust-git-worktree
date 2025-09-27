@@ -147,7 +147,7 @@ impl Snapshot {
 
         let actions = Paragraph::new(Line::from(spans)).block(
             Block::default()
-                .title("Worktree Actions")
+                .title("Worktree Actions (Tab key)")
                 .borders(Borders::ALL),
         );
         frame.render_widget(actions, detail_chunks[1]);
