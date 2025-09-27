@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file. This format
 
 ### Added
 - Add interactive command.
+- Provide VHS tape and generated GIF for the interactive mode walkthrough.
+
+### Changed
+- Highlight interactive mode at the top of the README and document the `rsworktree i` shortcut.
+- Document the `--remove` option for `rsworktree merge-pr-github`.
 
 ## [0.3.0] - 2025-09-27
 
