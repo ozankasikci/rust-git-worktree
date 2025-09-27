@@ -516,6 +516,11 @@ where
         match self.focus {
             Focus::Worktrees => {
                 if self.worktrees.is_empty() {
+                    if !super::GLOBAL_ACTIONS.is_empty() {
+                        self.focus = Focus::GlobalActions;
+                        self.global_action_selected =
+                            super::GLOBAL_ACTIONS.len().saturating_sub(1);
+                    }
                     return;
                 }
                 if matches!(self.selected, Some(0)) && !super::GLOBAL_ACTIONS.is_empty() {

@@ -318,7 +318,7 @@ fn up_from_top_moves_to_global_actions() -> Result<()> {
 
     let result = command.run(|_| Ok(()), |_, _| Ok(()))?;
 
-    assert_eq!(result, Some(String::from(super::REPO_ROOT_SELECTION)));
+    assert_eq!(result, Some(Selection::RepoRoot));
 
     Ok(())
 }
@@ -336,6 +336,29 @@ fn up_from_top_after_tabbing_picks_last_global_action() -> Result<()> {
     ]);
 
     let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(|_| Ok(()), |_, _| Ok(()))?;
+
+    assert_eq!(result, Some(Selection::RepoRoot));
+
+    Ok(())
+}
+
+#[test]
+fn up_with_no_worktrees_moves_to_global_actions() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![key(KeyCode::Up), key(KeyCode::Enter)]);
+
+    let worktrees = Vec::new();
     let command = InteractiveCommand::new(
         terminal,
         events,
