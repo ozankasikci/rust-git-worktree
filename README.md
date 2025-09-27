@@ -21,7 +21,7 @@
 
 - Open a terminal UI for browsing worktrees, focusing actions, and inspecting details without memorizing subcommands.
 - Launch it with the `interactive` command: `rsworktree interactive` (shortcut: `rsworktree i`).
-- ![Interactive mode screenshot](tapes/interactive-mode.png)
+- ![Interactive mode screenshot](tapes/gifs/interactive-mode.gif)
 
 ## CLI commands
 
