@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use super::{
-    Action, EventSource, Focus, StatusMessage, WorktreeEntry,
+    Action, EventSource, Focus, Selection, StatusMessage, WorktreeEntry,
     dialog::{CreateDialog, CreateDialogFocus, Dialog},
     view::{DetailData, DialogView, Snapshot},
 };
@@ -72,7 +72,7 @@ where
         }
     }
 
-    pub fn run<F, G>(mut self, mut on_remove: F, mut on_create: G) -> Result<Option<String>>
+    pub fn run<F, G>(mut self, mut on_remove: F, mut on_create: G) -> Result<Option<Selection>>
     where
         F: FnMut(&str) -> Result<()>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
@@ -90,7 +90,11 @@ where
         result
     }
 
-    fn event_loop<F, G>(&mut self, on_remove: &mut F, on_create: &mut G) -> Result<Option<String>>
+    fn event_loop<F, G>(
+        &mut self,
+        on_remove: &mut F,
+        on_create: &mut G,
+    ) -> Result<Option<Selection>>
     where
         F: FnMut(&str) -> Result<()>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
@@ -203,7 +207,9 @@ where
             Focus::Worktrees => {
                 if let Some(index) = self.selected {
                     return Ok(LoopControl::Exit(
-                        self.worktrees.get(index).map(|entry| entry.name.clone()),
+                        self.worktrees
+                            .get(index)
+                            .map(|entry| Selection::Worktree(entry.name.clone())),
                     ));
                 }
             }
@@ -212,7 +218,9 @@ where
                 match action {
                     Action::Open => {
                         if let Some(entry) = self.current_entry() {
-                            return Ok(LoopControl::Exit(Some(entry.name.clone())));
+                            return Ok(LoopControl::Exit(Some(Selection::Worktree(
+                                entry.name.clone(),
+                            ))));
                         }
                         self.status = Some(StatusMessage::info("No worktree selected."));
                     }
@@ -224,6 +232,14 @@ where
                                 Some(StatusMessage::info("No worktree selected to remove."));
                         }
                     }
+                    Action::PrGithub => {
+                        if let Some(entry) = self.current_entry() {
+                            return Ok(LoopControl::Exit(Some(Selection::PrGithub(
+                                entry.name.clone(),
+                            ))));
+                        }
+                        self.status = Some(StatusMessage::info("No worktree selected."));
+                    }
                 }
             }
             Focus::GlobalActions => match self.global_action_selected {
@@ -233,9 +249,7 @@ where
                     self.dialog = Some(Dialog::Create(dialog));
                 }
                 1 => {
-                    return Ok(LoopControl::Exit(Some(
-                        super::REPO_ROOT_SELECTION.to_string(),
-                    )));
+                    return Ok(LoopControl::Exit(Some(Selection::RepoRoot)));
                 }
                 _ => {}
             },
@@ -641,7 +655,7 @@ where
 
 enum LoopControl {
     Continue,
-    Exit(Option<String>),
+    Exit(Option<Selection>),
 }
 
 fn build_detail_data(entry: &WorktreeEntry) -> DetailData {
