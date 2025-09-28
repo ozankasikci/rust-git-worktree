@@ -165,6 +165,21 @@ mod tests {
     }
 
     #[test]
+    fn ensure_worktrees_dir_creates_directory() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let repo = init_repo(&dir)?;
+
+        let first = repo.ensure_worktrees_dir()?;
+        assert!(first.exists());
+        assert!(first.is_dir());
+
+        let second = repo.ensure_worktrees_dir()?;
+        assert_eq!(first, second);
+
+        Ok(())
+    }
+
+    #[test]
     fn gitignore_has_entry_detects_alternate_form() {
         assert!(gitignore_has_entry(".rsworktree\n"));
         assert!(gitignore_has_entry("  .rsworktree/  \n"));
