@@ -472,6 +472,79 @@ mod tests {
     }
 
     #[test]
+    fn determine_branch_surfaces_git_failures() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let worktree = dir.path();
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: String::new(),
+            stderr: "fatal: not a git repository".into(),
+            success: false,
+            status_code: Some(128),
+        }));
+
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
+        let error = command.determine_branch(worktree).unwrap_err();
+        let message = format!("{error}");
+        assert!(message.contains("git"));
+        assert!(message.contains("rev-parse"));
+
+        assert_eq!(
+            command.runner.calls,
+            vec![RecordedCall {
+                program: "git".into(),
+                dir: worktree.to_path_buf(),
+                args: vec!["rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()],
+            }]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn determine_branch_errors_on_empty_output() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let worktree = dir.path();
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: "\n".into(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
+        let error = command.determine_branch(worktree).unwrap_err();
+        assert!(format!("{error}").contains("empty branch name"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn find_pull_request_errors_on_invalid_json() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let repo_path = dir.path();
+
+        let mut runner = MockCommandRunner::default();
+        runner.responses.push_back(Ok(CommandOutput {
+            stdout: "not-json".into(),
+            stderr: String::new(),
+            success: true,
+            status_code: Some(0),
+        }));
+
+        let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
+        let error = command
+            .find_pull_request(repo_path, "feature/test")
+            .unwrap_err();
+        assert!(format!("{error}").contains("parse"));
+
+        Ok(())
+    }
+
+    #[test]
     fn removes_remote_branch_when_requested() -> color_eyre::Result<()> {
         let repo_dir = TempDir::new()?;
         init_git_repo(&repo_dir)?;
@@ -1013,5 +1086,59 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn command_failure_includes_stderr_and_status() {
+        let output = CommandOutput {
+            stdout: String::new(),
+            stderr: "fatal: bad".into(),
+            success: false,
+            status_code: Some(128),
+        };
+
+        let error = command_failure(
+            "git",
+            &["rev-parse".into(), "HEAD with spaces".into()],
+            &output,
+        );
+
+        let message = format!("{error}");
+        assert!(message.contains("git rev-parse"));
+        assert!(message.contains("'HEAD with spaces'"));
+        assert!(message.contains("fatal: bad"));
+        assert!(message.contains("128"));
+    }
+
+    #[test]
+    fn quote_arg_quotes_when_needed() {
+        assert_eq!(quote_arg("simple"), "simple");
+        assert_eq!(quote_arg("with space"), "'with space'");
+        assert_eq!(quote_arg("quote'needed"), "'quote'\\''needed'");
+    }
+
+    #[test]
+    fn format_command_builds_shell_safe_string() {
+        let cmd = format_command("git", &["commit".into(), "-m".into(), "hello world".into()]);
+        assert_eq!(cmd, "git commit -m 'hello world'");
+    }
+
+    #[test]
+    fn remote_branch_already_gone_detects_message() {
+        let output = CommandOutput {
+            stdout: "remote ref does not exist".into(),
+            stderr: "".into(),
+            success: false,
+            status_code: Some(1),
+        };
+        assert!(remote_branch_already_gone(&output));
+
+        let output_ok = CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: false,
+            status_code: Some(1),
+        };
+        assert!(!remote_branch_already_gone(&output_ok));
     }
 }
