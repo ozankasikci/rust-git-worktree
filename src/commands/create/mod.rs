@@ -288,4 +288,37 @@ mod tests {
         assert_eq!(sanitized.len(), 48);
         assert!(sanitized.chars().all(|c| c == 'a'));
     }
+
+    #[test]
+    fn prepare_branch_reuses_existing_reference() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        init_git_repo(&dir)?;
+
+        let repo = git2::Repository::open(dir.path())?;
+        let commit = repo.head()?.peel_to_commit()?;
+        repo.branch("feature/test", &commit, false)?;
+
+        let reference = prepare_branch(&repo, "feature/test", Some("HEAD"))?;
+
+        assert_eq!(reference.name(), Some("refs/heads/feature/test"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn prepare_branch_creates_branch_from_base() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        init_git_repo(&dir)?;
+
+        let repo = git2::Repository::open(dir.path())?;
+        let head = repo.head()?.peel_to_commit()?;
+
+        let reference = prepare_branch(&repo, "feature/new", Some("HEAD"))?;
+        let created = repo.find_reference("refs/heads/feature/new")?;
+
+        assert_eq!(reference.name(), created.name());
+        assert_eq!(created.peel_to_commit()?.id(), head.id());
+
+        Ok(())
+    }
 }
