@@ -117,3 +117,72 @@ fn gitignore_has_entry(contents: &str) -> bool {
         .map(|line| line.trim())
         .any(|line| line == WORKTREE_IGNORE_ENTRY || line == WORKTREE_IGNORE_ALT_ENTRY)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    fn init_repo(dir: &TempDir) -> color_eyre::Result<Repo> {
+        git2::Repository::init(dir.path())?;
+        Repo::discover_from(dir.path())
+    }
+
+    #[test]
+    fn ensure_worktrees_dir_creates_gitignore_when_missing() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let repo = init_repo(&dir)?;
+        let gitignore = dir.path().join(".gitignore");
+
+        assert!(!gitignore.exists(), "gitignore should start absent");
+
+        repo.ensure_worktrees_dir()?;
+
+        let contents = fs::read_to_string(&gitignore)?;
+        assert_eq!(contents, format!("{WORKTREE_IGNORE_ENTRY}\n"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_worktrees_dir_appends_entry_once() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let repo = init_repo(&dir)?;
+        let gitignore = dir.path().join(".gitignore");
+        fs::write(&gitignore, "target")?;
+
+        repo.ensure_worktrees_dir()?;
+        let contents = fs::read_to_string(&gitignore)?;
+        assert_eq!(contents, format!("target\n{WORKTREE_IGNORE_ENTRY}\n"));
+
+        repo.ensure_worktrees_dir()?;
+        let contents_again = fs::read_to_string(&gitignore)?;
+        assert_eq!(contents_again, contents);
+
+        Ok(())
+    }
+
+    #[test]
+    fn gitignore_has_entry_detects_alternate_form() {
+        assert!(gitignore_has_entry(".rsworktree\n"));
+        assert!(gitignore_has_entry("  .rsworktree/  \n"));
+        assert!(!gitignore_has_entry(".other"));
+    }
+
+    #[test]
+    fn ensure_worktrees_dir_respects_existing_entry() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        let repo = init_repo(&dir)?;
+        let gitignore = dir.path().join(".gitignore");
+        fs::write(&gitignore, format!("{WORKTREE_IGNORE_ALT_ENTRY}\n"))?;
+
+        repo.ensure_worktrees_dir()?;
+
+        let contents = fs::read_to_string(&gitignore)?;
+        assert_eq!(contents, format!("{WORKTREE_IGNORE_ALT_ENTRY}\n"));
+
+        Ok(())
+    }
+}

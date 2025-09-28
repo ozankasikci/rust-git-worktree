@@ -254,4 +254,38 @@ mod tests {
 
         Ok(())
     }
+
+    fn split_metadata_name(name: &str) -> (&str, &str) {
+        let without_prefix = name
+            .strip_prefix("rsworktree-")
+            .expect("name should include rsworktree prefix");
+        without_prefix
+            .rsplit_once('-')
+            .expect("name should include trailing hash")
+    }
+
+    #[test]
+    fn metadata_name_replaces_disallowed_characters() {
+        let name = worktree_metadata_name("feat/branch with spaces");
+        let (sanitized, hash) = split_metadata_name(&name);
+        assert_eq!(sanitized, "feat-branch-with-spaces");
+        assert_eq!(hash.len(), 16);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn metadata_name_uses_default_when_sanitized_empty() {
+        let name = worktree_metadata_name("///");
+        let (sanitized, _) = split_metadata_name(&name);
+        assert_eq!(sanitized, "worktree");
+    }
+
+    #[test]
+    fn metadata_name_truncates_long_inputs() {
+        let long_name = "a".repeat(80);
+        let name = worktree_metadata_name(&long_name);
+        let (sanitized, _) = split_metadata_name(&name);
+        assert_eq!(sanitized.len(), 48);
+        assert!(sanitized.chars().all(|c| c == 'a'));
+    }
 }
