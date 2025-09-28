@@ -206,7 +206,11 @@ fn resolve_worktree_name(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, fs, path::Path, process::Command as StdCommand};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        process::Command as StdCommand,
+    };
 
     use clap::Parser;
     use color_eyre::eyre::{self, WrapErr};
@@ -219,7 +223,16 @@ mod tests {
 
     impl DirGuard {
         fn change_to(path: &Path) -> color_eyre::Result<Self> {
-            let original = env::current_dir().wrap_err("failed to capture current directory")?;
+            let original = match env::current_dir() {
+                Ok(dir) => dir,
+                Err(_) => {
+                    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                    env::set_current_dir(&fallback).wrap_err_with(|| {
+                        eyre::eyre!("failed to switch to fallback `{}`", fallback.display())
+                    })?;
+                    fallback
+                }
+            };
             env::set_current_dir(path)
                 .wrap_err_with(|| eyre::eyre!("failed to switch to `{}`", path.display()))?;
             Ok(Self { original })

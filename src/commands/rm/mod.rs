@@ -221,7 +221,7 @@ fn logical_pwd(path: &Path) -> std::ffi::OsString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use tempfile::TempDir;
 
@@ -277,7 +277,14 @@ mod tests {
 
     #[test]
     fn removing_current_worktree_repositions_to_root() -> color_eyre::Result<()> {
-        let original_dir = std::env::current_dir()?;
+        let original_dir = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(_) => {
+                let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                std::env::set_current_dir(&fallback)?;
+                fallback
+            }
+        };
         let dir = TempDir::new()?;
         init_git_repo(&dir)?;
         let repo = Repo::discover_from(dir.path())?;
