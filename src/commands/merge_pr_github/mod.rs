@@ -194,6 +194,8 @@ where
                 "{}",
                 warning.if_supports_color(Stream::Stdout, |text| format!("{}", text.yellow()))
             );
+        } else if self.remove_local_branch {
+            println!("Deleted local branch `{}`.", branch_label);
         }
 
         if !self.remove_local_branch || branch_delete_failed {
