@@ -150,6 +150,12 @@ where
         worktree_path: &Path,
         pr_number: u64,
     ) -> color_eyre::Result<()> {
+        let mut detached_for_deletion = false;
+        if self.remove_local_branch {
+            self.detach_worktree_head(worktree_path)?;
+            detached_for_deletion = true;
+        }
+
         let mut args = vec![
             "pr".to_owned(),
             "merge".to_owned(),
@@ -168,6 +174,9 @@ where
         let branch_delete_failed = self.remove_local_branch && gh_branch_delete_failure(&output);
 
         if !output.success && !branch_delete_failed {
+            if detached_for_deletion {
+                let _ = self.restore_worktree_branch(worktree_path, branch);
+            }
             return Err(command_failure("gh", &args, &output));
         }
 
@@ -187,12 +196,32 @@ where
             );
         }
 
-        self.restore_worktree_branch(worktree_path, branch)?;
+        if !self.remove_local_branch || branch_delete_failed {
+            self.restore_worktree_branch(worktree_path, branch)?;
+        }
 
         if self.remove_remote_branch {
             self.delete_remote_branch(repo_path, branch)?;
         }
         println!("Merged PR {} for branch `{}`.", pr_label, branch_label);
+        Ok(())
+    }
+
+    fn detach_worktree_head(&mut self, worktree_path: &Path) -> color_eyre::Result<()> {
+        let args = vec![
+            "switch".to_owned(),
+            "--detach".to_owned(),
+            "HEAD".to_owned(),
+        ];
+        let output = self
+            .runner
+            .run("git", worktree_path, &args)
+            .wrap_err("failed to detach worktree with `git switch --detach`")?;
+
+        if !output.success {
+            return Err(command_failure("git", &args, &output));
+        }
+
         Ok(())
     }
 
@@ -450,6 +479,11 @@ mod tests {
                     ],
                 },
                 RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "--detach".into(), "HEAD".into()],
+                },
+                RecordedCall {
                     program: "gh".into(),
                     dir: repo_root,
                     args: vec![
@@ -459,11 +493,6 @@ mod tests {
                         "--merge".into(),
                         "--delete-branch".into(),
                     ],
-                },
-                RecordedCall {
-                    program: "git".into(),
-                    dir: worktree_path.clone(),
-                    args: vec!["switch".into(), "feature/test".into()],
                 },
             ]
         );
@@ -616,6 +645,11 @@ mod tests {
                     ],
                 },
                 RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "--detach".into(), "HEAD".into()],
+                },
+                RecordedCall {
                     program: "gh".into(),
                     dir: repo_root.clone(),
                     args: vec![
@@ -625,11 +659,6 @@ mod tests {
                         "--merge".into(),
                         "--delete-branch".into(),
                     ],
-                },
-                RecordedCall {
-                    program: "git".into(),
-                    dir: worktree_path.clone(),
-                    args: vec!["switch".into(), "feature/remove".into()],
                 },
                 RecordedCall {
                     program: "git".into(),
@@ -859,6 +888,12 @@ mod tests {
                 status_code: Some(0),
             }),
             Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+                status_code: Some(0),
+            }),
+            Ok(CommandOutput {
                 stdout: "Pull request successfully merged".into(),
                 stderr: "failed to delete local branch merge-cmd".into(),
                 success: false,
@@ -898,6 +933,11 @@ mod tests {
                         "--limit".into(),
                         "1".into(),
                     ],
+                },
+                RecordedCall {
+                    program: "git".into(),
+                    dir: worktree_path.clone(),
+                    args: vec!["switch".into(), "--detach".into(), "HEAD".into()],
                 },
                 RecordedCall {
                     program: "gh".into(),
@@ -1026,12 +1066,6 @@ mod tests {
             }),
             Ok(CommandOutput {
                 stdout: String::new(),
-                stderr: String::new(),
-                success: true,
-                status_code: Some(0),
-            }),
-            Ok(CommandOutput {
-                stdout: String::new(),
                 stderr: String::from("fatal: not a git repository"),
                 success: false,
                 status_code: Some(128),
@@ -1040,7 +1074,7 @@ mod tests {
 
         let mut command = MergePrGithubCommand::with_runner("feature/test".into(), runner);
         let err = command.execute(&repo).unwrap_err();
-        assert!(err.to_string().contains("git switch"));
+        assert!(err.to_string().contains("git switch --detach"));
 
         assert_eq!(
             command.runner.calls,
@@ -1067,20 +1101,9 @@ mod tests {
                     ],
                 },
                 RecordedCall {
-                    program: "gh".into(),
-                    dir: repo_root,
-                    args: vec![
-                        "pr".into(),
-                        "merge".into(),
-                        "42".into(),
-                        "--merge".into(),
-                        "--delete-branch".into(),
-                    ],
-                },
-                RecordedCall {
                     program: "git".into(),
                     dir: worktree_path,
-                    args: vec!["switch".into(), "feature/test".into()],
+                    args: vec!["switch".into(), "--detach".into(), "HEAD".into()],
                 },
             ]
         );
