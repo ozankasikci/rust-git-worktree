@@ -16,6 +16,19 @@ pub struct RemoveCommand {
     force: bool,
     quiet: bool,
     remove_local_branch: bool,
+    spawn_shell: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalBranchStatus {
+    Deleted,
+    NotFound,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemoveOutcome {
+    pub local_branch: Option<LocalBranchStatus>,
+    pub repositioned: bool,
 }
 
 impl RemoveCommand {
@@ -25,6 +38,7 @@ impl RemoveCommand {
             force,
             quiet: false,
             remove_local_branch: false,
+            spawn_shell: true,
         }
     }
 
@@ -38,7 +52,12 @@ impl RemoveCommand {
         self
     }
 
-    pub fn execute(&self, repo: &Repo) -> color_eyre::Result<()> {
+    pub fn with_spawn_shell(mut self, spawn: bool) -> Self {
+        self.spawn_shell = spawn;
+        self
+    }
+
+    pub fn execute(&self, repo: &Repo) -> color_eyre::Result<RemoveOutcome> {
         let worktrees_dir = repo.worktrees_dir();
         if !worktrees_dir.exists() {
             let dir = format!("{}", worktrees_dir.display());
@@ -53,7 +72,12 @@ impl RemoveCommand {
                     dir
                 );
             }
-            return Ok(());
+            return Ok(RemoveOutcome {
+                local_branch: self
+                    .remove_local_branch
+                    .then_some(LocalBranchStatus::NotFound),
+                repositioned: false,
+            });
         }
 
         let worktree_path = worktrees_dir.join(&self.name);
@@ -73,7 +97,12 @@ impl RemoveCommand {
                     worktrees_dir.display()
                 );
             }
-            return Ok(());
+            return Ok(RemoveOutcome {
+                local_branch: self
+                    .remove_local_branch
+                    .then_some(LocalBranchStatus::NotFound),
+                repositioned: false,
+            });
         }
 
         let git_repo = repo.git();
@@ -93,7 +122,12 @@ impl RemoveCommand {
                         worktrees_dir.display()
                     );
                 }
-                return Ok(());
+                return Ok(RemoveOutcome {
+                    local_branch: self
+                        .remove_local_branch
+                        .then_some(LocalBranchStatus::NotFound),
+                    repositioned: false,
+                });
             }
         };
 
@@ -137,16 +171,18 @@ impl RemoveCommand {
             );
         }
 
-        if self.remove_local_branch {
-            self.delete_local_branch(repo)?;
-        }
-
         let need_reposition = match std::env::current_dir() {
             Ok(dir) => {
                 let canonical = fs::canonicalize(&dir).unwrap_or(dir.clone());
                 canonical.starts_with(&worktree_path)
             }
             Err(_) => true,
+        };
+
+        let local_branch = if self.remove_local_branch {
+            Some(self.delete_local_branch(repo)?)
+        } else {
+            None
         };
 
         if need_reposition {
@@ -168,45 +204,50 @@ impl RemoveCommand {
                 println!("Now in root `{}`.", root_display);
             }
 
-            let (program, args) = shell_command();
-            let status = Command::new(&program)
-                .args(args)
-                .current_dir(repo.root())
-                .env("PWD", logical_pwd(repo.root()))
-                .status()
-                .wrap_err("failed to spawn root shell")?;
+            if self.spawn_shell {
+                let (program, args) = shell_command();
+                let status = Command::new(&program)
+                    .args(args)
+                    .current_dir(repo.root())
+                    .env("PWD", logical_pwd(repo.root()))
+                    .status()
+                    .wrap_err("failed to spawn root shell")?;
 
-            if !status.success() {
-                return Err(eyre::eyre!("subshell exited with a non-zero status"));
+                if !status.success() {
+                    return Err(eyre::eyre!("subshell exited with a non-zero status"));
+                }
             }
         }
 
-        Ok(())
+        Ok(RemoveOutcome {
+            local_branch,
+            repositioned: need_reposition,
+        })
     }
 
-    fn delete_local_branch(&self, repo: &Repo) -> color_eyre::Result<()> {
+    fn delete_local_branch(&self, repo: &Repo) -> color_eyre::Result<LocalBranchStatus> {
         let git_repo = repo.git();
         match git_repo.find_branch(&self.name, BranchType::Local) {
             Ok(mut branch) => {
                 if self.force {
                     drop(branch);
-                    let full_ref = format!("refs/heads/{}", self.name);
-                    match git_repo.find_reference(&full_ref) {
-                        Ok(mut reference) => reference.delete().wrap_err_with(|| {
-                            eyre::eyre!("failed to delete local branch reference `{}`", self.name)
-                        })?,
-                        Err(err) if err.code() == ErrorCode::NotFound => {}
+                    Self::force_delete_reference(git_repo, &self.name)?;
+                } else {
+                    match branch.delete() {
+                        Ok(()) => {}
                         Err(err) => {
-                            return Err(eyre::eyre!(
-                                "failed to look up branch `{}`: {err}",
-                                self.name
-                            ));
+                            drop(branch);
+                            Self::force_delete_reference(git_repo, &self.name).wrap_err_with(
+                                || {
+                                    eyre::eyre!(
+                                        "failed to delete local branch `{}` ({}).",
+                                        self.name,
+                                        err
+                                    )
+                                },
+                            )?;
                         }
                     }
-                } else {
-                    branch.delete().wrap_err_with(|| {
-                        eyre::eyre!("failed to delete local branch `{}`", self.name)
-                    })?;
                 }
 
                 if !self.quiet {
@@ -220,17 +261,41 @@ impl RemoveCommand {
                     );
                     println!("Deleted local branch `{}`.", branch_label);
                 }
+                Ok(LocalBranchStatus::Deleted)
             }
-            Err(err) if err.code() == ErrorCode::NotFound => {}
-            Err(err) => {
-                return Err(eyre::eyre!(
-                    "failed to look up local branch `{}`: {err}",
-                    self.name
-                ));
+            Err(err) if err.code() == ErrorCode::NotFound => {
+                if !self.quiet {
+                    let branch_label = format!(
+                        "{}",
+                        self.name
+                            .as_str()
+                            .if_supports_color(Stream::Stdout, |text| {
+                                format!("{}", text.magenta())
+                            })
+                    );
+                    println!(
+                        "Local branch `{}` not found; skipping removal.",
+                        branch_label
+                    );
+                }
+                Ok(LocalBranchStatus::NotFound)
             }
+            Err(err) => Err(eyre::eyre!(
+                "failed to look up local branch `{}`: {err}",
+                self.name
+            )),
         }
+    }
 
-        Ok(())
+    fn force_delete_reference(repo: &git2::Repository, name: &str) -> color_eyre::Result<()> {
+        let full_ref = format!("refs/heads/{name}");
+        match repo.find_reference(&full_ref) {
+            Ok(mut reference) => reference
+                .delete()
+                .wrap_err_with(|| eyre::eyre!("failed to delete local branch reference `{name}`")),
+            Err(err) if err.code() == ErrorCode::NotFound => Ok(()),
+            Err(err) => Err(eyre::eyre!("failed to look up branch `{name}`: {err}")),
+        }
     }
 }
 
@@ -281,7 +346,10 @@ fn logical_pwd(path: &Path) -> std::ffi::OsString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use tempfile::TempDir;
 
@@ -323,6 +391,22 @@ mod tests {
         Ok(())
     }
 
+    fn run_in(path: &Path, cmd: impl IntoIterator<Item = &'static str>) -> color_eyre::Result<()> {
+        let mut iter = cmd.into_iter();
+        let program = iter.next().expect("command must not be empty");
+        let status = Command::new(program)
+            .current_dir(path)
+            .args(iter)
+            .status()
+            .wrap_err_with(|| eyre::eyre!("failed to run `{program}`"))?;
+
+        if !status.success() {
+            return Err(eyre::eyre!("`{program}` exited with status {status}`"));
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn reports_missing_worktree_directory() -> color_eyre::Result<()> {
         let dir = TempDir::new()?;
@@ -330,7 +414,7 @@ mod tests {
         let repo = Repo::discover_from(dir.path())?;
 
         let command = RemoveCommand::new("feature/test".into(), false);
-        command.execute(&repo)?;
+        let _ = command.execute(&repo)?;
 
         Ok(())
     }
@@ -359,7 +443,12 @@ mod tests {
         std::env::set_current_dir(&worktree_path)?;
 
         let command = RemoveCommand::new("feature/local".into(), false);
-        command.execute(&repo)?;
+        let outcome = command.execute(&repo)?;
+        assert!(
+            outcome.repositioned,
+            "expected removal to reposition to root"
+        );
+        assert!(outcome.local_branch.is_none());
 
         let new_cwd = std::env::current_dir()?;
         assert_eq!(new_cwd, repo.root());
@@ -380,12 +469,66 @@ mod tests {
 
         let create = CreateCommand::new("feature/local".into(), None);
         create.create_without_enter(&repo, true)?;
+        assert!(
+            repo.git()
+                .find_branch("feature/local", BranchType::Local)
+                .is_ok(),
+            "expected local branch to exist before removal"
+        );
 
         let command = RemoveCommand::new("feature/local".into(), false)
             .with_quiet(true)
             .with_remove_local_branch(true);
-        command.execute(&repo)?;
+        let outcome = command.execute(&repo)?;
 
+        assert_eq!(
+            outcome.local_branch,
+            Some(LocalBranchStatus::Deleted),
+            "expected local branch deletion to be reported"
+        );
+        assert!(!outcome.repositioned);
+        let branch = repo.git().find_branch("feature/local", BranchType::Local);
+        assert!(matches!(branch, Err(err) if err.code() == ErrorCode::NotFound));
+
+        Ok(())
+    }
+
+    #[test]
+    fn deletes_unmerged_local_branch_when_requested() -> color_eyre::Result<()> {
+        let dir = TempDir::new()?;
+        init_git_repo(&dir)?;
+        let repo = Repo::discover_from(dir.path())?;
+
+        let create = CreateCommand::new("feature/local".into(), None);
+        create.create_without_enter(&repo, true)?;
+
+        let worktree_path = repo.worktrees_dir().join("feature/local");
+        fs::write(worktree_path.join("note.txt"), "work in progress")?;
+        run_in(&worktree_path, ["git", "add", "note.txt"])?;
+        run_in(
+            &worktree_path,
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "WIP",
+            ],
+        )?;
+
+        let branch_before = repo.git().find_branch("feature/local", BranchType::Local);
+        assert!(branch_before.is_ok(), "branch should exist before removal");
+
+        let command = RemoveCommand::new("feature/local".into(), false)
+            .with_quiet(true)
+            .with_remove_local_branch(true);
+        let outcome = command.execute(&repo)?;
+
+        assert_eq!(outcome.local_branch, Some(LocalBranchStatus::Deleted));
+        assert!(!outcome.repositioned);
         let branch = repo.git().find_branch("feature/local", BranchType::Local);
         assert!(matches!(branch, Err(err) if err.code() == ErrorCode::NotFound));
 
@@ -402,8 +545,10 @@ mod tests {
         create.create_without_enter(&repo, true)?;
 
         let command = RemoveCommand::new("feature/local".into(), false).with_quiet(true);
-        command.execute(&repo)?;
+        let outcome = command.execute(&repo)?;
 
+        assert!(outcome.local_branch.is_none());
+        assert!(!outcome.repositioned);
         let branch = repo.git().find_branch("feature/local", BranchType::Local);
         assert!(branch.is_ok(), "expected local branch to remain present");
 

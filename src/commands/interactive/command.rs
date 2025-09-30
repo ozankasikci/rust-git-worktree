@@ -21,6 +21,7 @@ use super::{
     },
     view::{DetailData, DialogView, Snapshot},
 };
+use crate::commands::rm::{LocalBranchStatus, RemoveOutcome};
 
 pub struct InteractiveCommand<B, E>
 where
@@ -77,7 +78,7 @@ where
 
     pub fn run<F, G>(mut self, mut on_remove: F, mut on_create: G) -> Result<Option<Selection>>
     where
-        F: FnMut(&str, bool) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         self.terminal
@@ -86,6 +87,9 @@ where
 
         let result = self.event_loop(&mut on_remove, &mut on_create);
 
+        self.terminal
+            .clear()
+            .wrap_err("failed to clear terminal before exit")?;
         self.terminal
             .show_cursor()
             .wrap_err("failed to show cursor")?;
@@ -99,7 +103,7 @@ where
         on_create: &mut G,
     ) -> Result<Option<Selection>>
     where
-        F: FnMut(&str, bool) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         let mut state = ListState::default();
@@ -126,7 +130,7 @@ where
         on_create: &mut G,
     ) -> Result<LoopControl>
     where
-        F: FnMut(&str, bool) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         if let Some(dialog) = self.dialog.clone() {
@@ -134,7 +138,7 @@ where
                 Dialog::Remove(_) => {
                     if let Event::Key(key) = event {
                         if key.kind == KeyEventKind::Press {
-                            self.handle_remove_dialog_key(key, state, on_remove)?;
+                            return self.handle_remove_dialog_key(key, state, on_remove);
                         }
                     }
                     return Ok(LoopControl::Continue);
@@ -327,17 +331,18 @@ where
         key: KeyEvent,
         state: &mut ListState,
         on_remove: &mut F,
-    ) -> Result<()>
+    ) -> Result<LoopControl>
     where
-        F: FnMut(&str, bool) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<RemoveOutcome>,
     {
         let dialog_state = self.dialog.take();
         let Some(Dialog::Remove(mut dialog)) = dialog_state else {
             self.dialog = dialog_state;
-            return Ok(());
+            return Ok(LoopControl::Continue);
         };
 
         let mut reinstate = true;
+        let mut control = LoopControl::Continue;
 
         match key.code {
             KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
@@ -346,7 +351,14 @@ where
             }
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 reinstate = false;
-                self.perform_remove(dialog.index, dialog.remove_local_branch(), state, on_remove)?;
+                if let Some(selection) = self.perform_remove(
+                    dialog.index,
+                    dialog.remove_local_branch(),
+                    state,
+                    on_remove,
+                )? {
+                    control = LoopControl::Exit(Some(selection));
+                }
             }
             KeyCode::Tab => dialog.focus_next(),
             KeyCode::BackTab => dialog.focus_prev(),
@@ -381,12 +393,14 @@ where
                         self.status = Some(StatusMessage::info("Removal cancelled."));
                     } else {
                         reinstate = false;
-                        self.perform_remove(
+                        if let Some(selection) = self.perform_remove(
                             dialog.index,
                             dialog.remove_local_branch(),
                             state,
                             on_remove,
-                        )?;
+                        )? {
+                            control = LoopControl::Exit(Some(selection));
+                        }
                     }
                 }
             },
@@ -397,7 +411,7 @@ where
             self.dialog = Some(Dialog::Remove(dialog));
         }
 
-        Ok(())
+        Ok(control)
     }
 
     fn perform_remove<F>(
@@ -406,26 +420,40 @@ where
         remove_local_branch: bool,
         state: &mut ListState,
         on_remove: &mut F,
-    ) -> Result<()>
+    ) -> Result<Option<Selection>>
     where
-        F: FnMut(&str, bool) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<RemoveOutcome>,
     {
         if let Some(entry) = self.worktrees.get(index).cloned() {
             match on_remove(&entry.name, remove_local_branch) {
-                Ok(()) => {
+                Ok(outcome) => {
                     self.worktrees.remove(index);
                     let removal_dir = entry
                         .path
                         .parent()
                         .map(|parent| parent.display().to_string())
                         .unwrap_or_else(|| entry.path.display().to_string());
-                    let message =
+                    let mut message =
                         format!("Removed worktree `{}` from `{}`.", entry.name, removal_dir);
+                    match outcome.local_branch {
+                        Some(LocalBranchStatus::Deleted) => {
+                            message.push_str(&format!(" Deleted local branch `{}`.", entry.name));
+                        }
+                        Some(LocalBranchStatus::NotFound) => {
+                            message.push_str(&format!(" Local branch `{}` not found.", entry.name));
+                        }
+                        None => {}
+                    }
                     self.selected = None;
                     self.focus = Focus::Worktrees;
                     self.sync_selection(state);
                     self.status = None;
-                    self.dialog = Some(Dialog::Info { message });
+                    if outcome.repositioned {
+                        self.dialog = None;
+                        return Ok(Some(Selection::RepoRoot));
+                    } else {
+                        self.dialog = Some(Dialog::Info { message });
+                    }
                 }
                 Err(err) => {
                     self.status = Some(StatusMessage::error(format!(
@@ -439,7 +467,7 @@ where
             self.dialog = None;
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn handle_create_key<G>(
