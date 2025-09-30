@@ -128,7 +128,7 @@ pub fn run() -> color_eyre::Result<()> {
         }
         Commands::Rm(args) => {
             let command = RemoveCommand::new(args.name, args.force);
-            command.execute(&repo)?;
+            let _ = command.execute(&repo)?;
         }
         Commands::PrGithub(args) => {
             let worktree_name = resolve_worktree_name(args.name, &repo, "pr-github")?;

@@ -68,7 +68,8 @@ pub fn run(repo: &Repo) -> Result<()> {
         |name, remove_local_branch| {
             let command = RemoveCommand::new(name.to_owned(), false)
                 .with_quiet(true)
-                .with_remove_local_branch(remove_local_branch);
+                .with_remove_local_branch(remove_local_branch)
+                .with_spawn_shell(false);
             command.execute(repo)
         },
         |name, base| {
@@ -135,7 +136,7 @@ pub fn run(repo: &Repo) -> Result<()> {
 
                 if remove_worktree {
                     let remove_command = RemoveCommand::new(name, false);
-                    remove_command.execute(repo)?;
+                    let _ = remove_command.execute(repo)?;
                 }
             }
         }

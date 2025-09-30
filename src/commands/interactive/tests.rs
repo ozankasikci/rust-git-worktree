@@ -5,6 +5,8 @@ use color_eyre::{Result, eyre};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
+use crate::commands::rm::{LocalBranchStatus, RemoveOutcome};
+
 struct StubEvents {
     events: VecDeque<Event>,
 }
@@ -56,7 +58,15 @@ fn returns_first_worktree_when_enter_pressed_immediately() -> Result<()> {
     );
 
     let selection = command
-        .run(|_, _| Ok(()), |_, _| panic!("create should not be called"))?
+        .run(
+            |_, _| {
+                Ok(RemoveOutcome {
+                    local_branch: None,
+                    repositioned: false,
+                })
+            },
+            |_, _| panic!("create should not be called"),
+        )?
         .expect("expected selection");
     assert_eq!(selection, Selection::Worktree(String::from("alpha")));
 
@@ -79,7 +89,15 @@ fn navigates_down_before_selecting() -> Result<()> {
     );
 
     let selection = command
-        .run(|_, _| Ok(()), |_, _| panic!("create should not be called"))?
+        .run(
+            |_, _| {
+                Ok(RemoveOutcome {
+                    local_branch: None,
+                    repositioned: false,
+                })
+            },
+            |_, _| panic!("create should not be called"),
+        )?
         .expect("expected selection");
     assert_eq!(selection, Selection::Worktree(String::from("beta")));
 
@@ -110,7 +128,10 @@ fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
     let result = command.run(
         |name, _remove_branch| {
             removed.push(name.to_owned());
-            Ok(())
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
         },
         |_, _| panic!("create should not be called"),
     )?;
@@ -148,7 +169,15 @@ fn selecting_merge_action_collects_cleanup_choices() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| panic!("create should not be called"))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
 
     match result {
         Some(Selection::MergePrGithub {
@@ -192,7 +221,15 @@ fn merge_dialog_allows_disabling_local_branch_removal() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| panic!("create should not be called"))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
 
     match result {
         Some(Selection::MergePrGithub {
@@ -239,7 +276,10 @@ fn tabbing_to_actions_removes_selected_worktree() -> Result<()> {
     let result = command.run(
         |name, remove_local_branch| {
             removed.push((name.to_owned(), remove_local_branch));
-            Ok(())
+            Ok(RemoveOutcome {
+                local_branch: remove_local_branch.then_some(LocalBranchStatus::Deleted),
+                repositioned: false,
+            })
         },
         |_, _| panic!("create should not be called"),
     )?;
@@ -281,13 +321,55 @@ fn remove_dialog_allows_disabling_local_branch_removal() -> Result<()> {
     let result = command.run(
         |name, remove_local_branch| {
             removed.push((name.to_owned(), remove_local_branch));
-            Ok(())
+            Ok(RemoveOutcome {
+                local_branch: remove_local_branch.then_some(LocalBranchStatus::Deleted),
+                repositioned: false,
+            })
         },
         |_, _| panic!("create should not be called"),
     )?;
 
     assert!(result.is_none());
     assert_eq!(removed, vec![(String::from("alpha"), false)]);
+
+    Ok(())
+}
+
+#[test]
+fn removing_current_worktree_requests_root_exit() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        char_key('y'),
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut removed = Vec::new();
+    let result = command.run(
+        |name, remove_local_branch| {
+            removed.push((name.to_owned(), remove_local_branch));
+            Ok(RemoveOutcome {
+                local_branch: remove_local_branch.then_some(LocalBranchStatus::Deleted),
+                repositioned: true,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
+
+    assert_eq!(removed, vec![(String::from("alpha"), true)]);
+    assert_eq!(result, Some(Selection::RepoRoot));
 
     Ok(())
 }
@@ -317,7 +399,10 @@ fn cancelling_remove_keeps_worktree() -> Result<()> {
     let result = command.run(
         |name, remove_local_branch| {
             removed.push((name.to_owned(), remove_local_branch));
-            Ok(())
+            Ok(RemoveOutcome {
+                local_branch: remove_local_branch.then_some(LocalBranchStatus::Deleted),
+                repositioned: false,
+            })
         },
         |_, _| panic!("create should not be called"),
     )?;
@@ -357,7 +442,12 @@ fn create_action_adds_new_worktree() -> Result<()> {
 
     let mut created = Vec::new();
     let result = command.run(
-        |_, _| Ok(()),
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
         |name, base| {
             created.push((name.to_string(), base.map(|b| b.to_string())));
             Ok(())
@@ -395,7 +485,15 @@ fn cancelling_create_leaves_state_unchanged() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| panic!("create should not be called"))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
 
     assert!(result.is_none());
 
@@ -418,7 +516,15 @@ fn cd_to_root_global_action_exits() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| Ok(()))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+    )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
 
@@ -441,7 +547,15 @@ fn up_from_top_moves_to_global_actions() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| Ok(()))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+    )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
 
@@ -469,7 +583,15 @@ fn up_from_top_after_tabbing_picks_last_global_action() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| Ok(()))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+    )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
 
@@ -492,7 +614,15 @@ fn up_with_no_worktrees_moves_to_global_actions() -> Result<()> {
         Some(String::from("main")),
     );
 
-    let result = command.run(|_, _| Ok(()), |_, _| Ok(()))?;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+    )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
 
