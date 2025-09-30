@@ -190,6 +190,96 @@ impl CreateDialogView {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RemoveDialogFocus {
+    Options,
+    Buttons,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RemoveDialog {
+    pub(crate) index: usize,
+    pub(crate) focus: RemoveDialogFocus,
+    pub(crate) options_selected: usize,
+    pub(crate) buttons_selected: usize,
+    pub(crate) remove_local_branch: bool,
+}
+
+impl RemoveDialog {
+    const OPTION_COUNT: usize = 1;
+    const BUTTON_COUNT: usize = 2;
+
+    pub(crate) fn new(index: usize) -> Self {
+        Self {
+            index,
+            focus: RemoveDialogFocus::Options,
+            options_selected: 0,
+            buttons_selected: 1,
+            remove_local_branch: true,
+        }
+    }
+
+    pub(crate) fn focus_next(&mut self) {
+        self.focus = match self.focus {
+            RemoveDialogFocus::Options => RemoveDialogFocus::Buttons,
+            RemoveDialogFocus::Buttons => RemoveDialogFocus::Options,
+        };
+    }
+
+    pub(crate) fn focus_prev(&mut self) {
+        self.focus_next();
+    }
+
+    pub(crate) fn move_option(&mut self, delta: isize) {
+        let len = Self::OPTION_COUNT as isize;
+        let current = self.options_selected as isize;
+        let next = (current + delta).rem_euclid(len);
+        self.options_selected = next as usize;
+    }
+
+    pub(crate) fn move_button(&mut self, delta: isize) {
+        let len = Self::BUTTON_COUNT as isize;
+        let current = self.buttons_selected as isize;
+        let next = (current + delta).rem_euclid(len);
+        self.buttons_selected = next as usize;
+    }
+
+    pub(crate) fn toggle_selected_option(&mut self) {
+        if self.options_selected == 0 {
+            self.remove_local_branch = !self.remove_local_branch;
+        }
+    }
+
+    pub(crate) fn remove_local_branch(&self) -> bool {
+        self.remove_local_branch
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RemoveDialogView {
+    pub(crate) focus: RemoveDialogFocus,
+    pub(crate) options_selected: usize,
+    pub(crate) buttons_selected: usize,
+    pub(crate) remove_local_branch: bool,
+}
+
+impl From<&RemoveDialog> for RemoveDialogView {
+    fn from(dialog: &RemoveDialog) -> Self {
+        Self {
+            focus: dialog.focus,
+            options_selected: dialog.options_selected,
+            buttons_selected: dialog.buttons_selected,
+            remove_local_branch: dialog.remove_local_branch,
+        }
+    }
+}
+
+impl From<RemoveDialog> for RemoveDialogView {
+    fn from(dialog: RemoveDialog) -> Self {
+        Self::from(&dialog)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MergeDialogFocus {
     Options,
     Buttons,
@@ -300,7 +390,7 @@ impl From<MergeDialog> for MergeDialogView {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Dialog {
-    ConfirmRemove { index: usize },
+    Remove(RemoveDialog),
     Info { message: String },
     Create(CreateDialog),
     Merge(MergeDialog),

@@ -65,8 +65,10 @@ pub fn run(repo: &Repo) -> Result<()> {
         default_branch,
     );
     let result = command.run(
-        |name| {
-            let command = RemoveCommand::new(name.to_owned(), false).with_quiet(true);
+        |name, remove_local_branch| {
+            let command = RemoveCommand::new(name.to_owned(), false)
+                .with_quiet(true)
+                .with_remove_local_branch(remove_local_branch);
             command.execute(repo)
         },
         |name, base| {
