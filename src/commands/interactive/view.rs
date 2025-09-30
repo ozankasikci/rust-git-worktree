@@ -8,7 +8,10 @@ use ratatui::{
 
 use super::{
     Action, Focus, StatusMessage,
-    dialog::{CreateDialogFocus, CreateDialogView, MergeDialogFocus, MergeDialogView},
+    dialog::{
+        CreateDialogFocus, CreateDialogView, MergeDialogFocus, MergeDialogView, RemoveDialogFocus,
+        RemoveDialogView,
+    },
 };
 
 pub(crate) struct Snapshot {
@@ -29,8 +32,9 @@ pub(crate) struct DetailData {
 
 #[derive(Clone, Debug)]
 pub(crate) enum DialogView {
-    ConfirmRemove {
+    Remove {
         name: String,
+        dialog: RemoveDialogView,
     },
     Info {
         message: String,
@@ -85,7 +89,9 @@ impl Snapshot {
 
         if let Some(dialog) = &self.dialog {
             match dialog {
-                DialogView::ConfirmRemove { name } => self.render_confirmation(frame, size, name),
+                DialogView::Remove { name, dialog } => {
+                    self.render_remove(frame, size, name, dialog)
+                }
                 DialogView::Info { message } => self.render_info(frame, size, message),
                 DialogView::Create(create) => self.render_create(frame, size, create),
                 DialogView::Merge { name, dialog } => self.render_merge(frame, size, name, dialog),
@@ -162,22 +168,83 @@ impl Snapshot {
         frame.render_widget(actions, detail_chunks[1]);
     }
 
-    fn render_confirmation(&self, frame: &mut Frame, area: Rect, name: &str) {
-        let popup_area = centered_rect(60, 30, area);
+    fn render_remove(&self, frame: &mut Frame, area: Rect, name: &str, dialog: &RemoveDialogView) {
+        let popup_area = centered_rect(60, 45, area);
         frame.render_widget(Clear, popup_area);
 
-        let lines = vec![
-            Line::from(format!("Remove `{}`?", name)),
-            Line::from("Press Y/Enter to confirm or Esc to cancel."),
-        ];
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Length(5),
+                Constraint::Length(3),
+            ])
+            .split(popup_area);
 
-        let popup = Paragraph::new(lines).block(
+        let header_lines = vec![
+            Line::from(format!("Remove worktree `{name}`")),
+            Line::from("Choose any additional cleanup before removing."),
+        ];
+        let header = Paragraph::new(header_lines).block(
             Block::default()
                 .title("Confirm removal")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Red)),
         );
-        frame.render_widget(popup, popup_area);
+        frame.render_widget(header, layout[0]);
+
+        let options = [(dialog.remove_local_branch, "Remove local branch")];
+
+        let mut option_lines = Vec::new();
+        for (idx, (checked, label)) in options.iter().enumerate() {
+            let checkbox = if *checked { "[x]" } else { "[ ]" };
+            let mut style = Style::default();
+            if dialog.focus == RemoveDialogFocus::Options && dialog.options_selected == idx {
+                style = style
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            }
+
+            option_lines.push(Line::from(vec![
+                Span::styled((*checkbox).to_string(), style),
+                Span::raw(" "),
+                Span::styled((*label).to_string(), style),
+            ]));
+        }
+        option_lines.push(Line::from(""));
+        option_lines.push(Line::from(Span::styled(
+            "Space toggles options. Enter confirms.",
+            Style::default().fg(Color::Gray),
+        )));
+
+        let options_block = Paragraph::new(option_lines).block(
+            Block::default()
+                .title("Cleanup options")
+                .borders(Borders::ALL),
+        );
+        frame.render_widget(options_block, layout[1]);
+
+        let buttons = ["Cancel", "Remove"];
+        let mut button_spans = Vec::new();
+        for (idx, label) in buttons.iter().enumerate() {
+            if idx > 0 {
+                button_spans.push(Span::raw("   "));
+            }
+
+            let mut style = Style::default();
+            if dialog.focus == RemoveDialogFocus::Buttons && dialog.buttons_selected == idx {
+                let color = if idx == 1 { Color::Red } else { Color::Cyan };
+                style = style
+                    .fg(color)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            }
+
+            button_spans.push(Span::styled(format!("[ {label} ]"), style));
+        }
+
+        let buttons_block = Paragraph::new(Line::from(button_spans))
+            .block(Block::default().title("Actions").borders(Borders::ALL));
+        frame.render_widget(buttons_block, layout[2]);
     }
 
     fn render_info(&self, frame: &mut Frame, area: Rect, message: &str) {

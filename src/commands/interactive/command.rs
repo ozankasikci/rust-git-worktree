@@ -15,7 +15,10 @@ use ratatui::{
 
 use super::{
     Action, EventSource, Focus, Selection, StatusMessage, WorktreeEntry,
-    dialog::{CreateDialog, CreateDialogFocus, Dialog, MergeDialog, MergeDialogFocus},
+    dialog::{
+        CreateDialog, CreateDialogFocus, Dialog, MergeDialog, MergeDialogFocus, RemoveDialog,
+        RemoveDialogFocus,
+    },
     view::{DetailData, DialogView, Snapshot},
 };
 
@@ -74,7 +77,7 @@ where
 
     pub fn run<F, G>(mut self, mut on_remove: F, mut on_create: G) -> Result<Option<Selection>>
     where
-        F: FnMut(&str) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<()>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         self.terminal
@@ -96,7 +99,7 @@ where
         on_create: &mut G,
     ) -> Result<Option<Selection>>
     where
-        F: FnMut(&str) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<()>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         let mut state = ListState::default();
@@ -123,15 +126,15 @@ where
         on_create: &mut G,
     ) -> Result<LoopControl>
     where
-        F: FnMut(&str) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<()>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         if let Some(dialog) = self.dialog.clone() {
             match dialog {
-                Dialog::ConfirmRemove { index } => {
+                Dialog::Remove(_) => {
                     if let Event::Key(key) = event {
                         if key.kind == KeyEventKind::Press {
-                            self.handle_confirm(index, key.code, state, on_remove)?;
+                            self.handle_remove_dialog_key(key, state, on_remove)?;
                         }
                     }
                     return Ok(LoopControl::Continue);
@@ -280,7 +283,7 @@ where
                     }
                     Action::Remove => {
                         if let Some(index) = self.selected {
-                            self.dialog = Some(Dialog::ConfirmRemove { index });
+                            self.dialog = Some(Dialog::Remove(RemoveDialog::new(index)));
                         } else {
                             self.status =
                                 Some(StatusMessage::info("No worktree selected to remove."));
@@ -319,55 +322,121 @@ where
         Ok(LoopControl::Continue)
     }
 
-    fn handle_confirm<F>(
+    fn handle_remove_dialog_key<F>(
         &mut self,
-        index: usize,
-        code: KeyCode,
+        key: KeyEvent,
         state: &mut ListState,
         on_remove: &mut F,
     ) -> Result<()>
     where
-        F: FnMut(&str) -> Result<()>,
+        F: FnMut(&str, bool) -> Result<()>,
     {
-        match code {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                if let Some(entry) = self.worktrees.get(index).cloned() {
-                    match on_remove(&entry.name) {
-                        Ok(()) => {
-                            self.worktrees.remove(index);
-                            let removal_dir = entry
-                                .path
-                                .parent()
-                                .map(|parent| parent.display().to_string())
-                                .unwrap_or_else(|| entry.path.display().to_string());
-                            let message = format!(
-                                "Removed worktree `{}` from `{}`.",
-                                entry.name, removal_dir
-                            );
-                            self.selected = None;
-                            self.focus = Focus::Worktrees;
-                            self.sync_selection(state);
-                            self.status = None;
-                            self.dialog = Some(Dialog::Info { message });
-                            return Ok(());
-                        }
-                        Err(err) => {
-                            self.status = Some(StatusMessage::error(format!(
-                                "Failed to remove `{}`: {err}",
-                                entry.name
-                            )));
-                            self.dialog = None;
-                            return Ok(());
-                        }
+        let dialog_state = self.dialog.take();
+        let Some(Dialog::Remove(mut dialog)) = dialog_state else {
+            self.dialog = dialog_state;
+            return Ok(());
+        };
+
+        let mut reinstate = true;
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                reinstate = false;
+                self.status = Some(StatusMessage::info("Removal cancelled."));
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                reinstate = false;
+                self.perform_remove(dialog.index, dialog.remove_local_branch(), state, on_remove)?;
+            }
+            KeyCode::Tab => dialog.focus_next(),
+            KeyCode::BackTab => dialog.focus_prev(),
+            KeyCode::Up | KeyCode::Char('k') => match dialog.focus {
+                RemoveDialogFocus::Options => dialog.move_option(-1),
+                RemoveDialogFocus::Buttons => dialog.focus = RemoveDialogFocus::Options,
+            },
+            KeyCode::Down | KeyCode::Char('j') => match dialog.focus {
+                RemoveDialogFocus::Options => dialog.move_option(1),
+                RemoveDialogFocus::Buttons => {}
+            },
+            KeyCode::Left => {
+                if dialog.focus == RemoveDialogFocus::Buttons {
+                    dialog.move_button(-1);
+                }
+            }
+            KeyCode::Right => {
+                if dialog.focus == RemoveDialogFocus::Buttons {
+                    dialog.move_button(1);
+                }
+            }
+            KeyCode::Char(' ') => {
+                if dialog.focus == RemoveDialogFocus::Options {
+                    dialog.toggle_selected_option();
+                }
+            }
+            KeyCode::Enter => match dialog.focus {
+                RemoveDialogFocus::Options => dialog.toggle_selected_option(),
+                RemoveDialogFocus::Buttons => {
+                    if dialog.buttons_selected == 0 {
+                        reinstate = false;
+                        self.status = Some(StatusMessage::info("Removal cancelled."));
+                    } else {
+                        reinstate = false;
+                        self.perform_remove(
+                            dialog.index,
+                            dialog.remove_local_branch(),
+                            state,
+                            on_remove,
+                        )?;
                     }
                 }
-                self.dialog = None;
-            }
-            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                self.status = Some(StatusMessage::info("Removal cancelled."));
-                self.dialog = None;
-            }
+            },
             _ => {}
+        }
+
+        if reinstate {
+            self.dialog = Some(Dialog::Remove(dialog));
+        }
+
+        Ok(())
+    }
+
+    fn perform_remove<F>(
+        &mut self,
+        index: usize,
+        remove_local_branch: bool,
+        state: &mut ListState,
+        on_remove: &mut F,
+    ) -> Result<()>
+    where
+        F: FnMut(&str, bool) -> Result<()>,
+    {
+        if let Some(entry) = self.worktrees.get(index).cloned() {
+            match on_remove(&entry.name, remove_local_branch) {
+                Ok(()) => {
+                    self.worktrees.remove(index);
+                    let removal_dir = entry
+                        .path
+                        .parent()
+                        .map(|parent| parent.display().to_string())
+                        .unwrap_or_else(|| entry.path.display().to_string());
+                    let message =
+                        format!("Removed worktree `{}` from `{}`.", entry.name, removal_dir);
+                    self.selected = None;
+                    self.focus = Focus::Worktrees;
+                    self.sync_selection(state);
+                    self.status = None;
+                    self.dialog = Some(Dialog::Info { message });
+                }
+                Err(err) => {
+                    self.status = Some(StatusMessage::error(format!(
+                        "Failed to remove `{}`: {err}",
+                        entry.name
+                    )));
+                    self.dialog = None;
+                }
+            }
+        } else {
+            self.dialog = None;
         }
 
         Ok(())
@@ -769,11 +838,12 @@ where
         let detail = self.current_entry().map(build_detail_data);
 
         let dialog = match self.dialog.clone() {
-            Some(Dialog::ConfirmRemove { index }) => {
+            Some(Dialog::Remove(dialog)) => {
                 self.worktrees
-                    .get(index)
-                    .map(|entry| DialogView::ConfirmRemove {
+                    .get(dialog.index)
+                    .map(|entry| DialogView::Remove {
                         name: entry.name.clone(),
+                        dialog: dialog.into(),
                     })
             }
             Some(Dialog::Info { message }) => Some(DialogView::Info { message }),
