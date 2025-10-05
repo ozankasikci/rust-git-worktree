@@ -628,3 +628,47 @@ fn up_with_no_worktrees_moves_to_global_actions() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn down_with_no_worktrees_opens_create_dialog() -> Result<()> {
+    let backend = TestBackend::new(60, 18);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        char_key('n'),
+        char_key('e'),
+        char_key('w'),
+        key(KeyCode::Tab),
+        key(KeyCode::Tab),
+        key(KeyCode::Enter),
+        key(KeyCode::Enter),
+    ]);
+
+    let worktrees = Vec::new();
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut created = Vec::new();
+    let result = command.run(
+        |_, _| panic!("remove should not be called"),
+        |name, base| {
+            created.push((name.to_string(), base.map(|b| b.to_string())));
+            Ok(())
+        },
+    )?;
+
+    assert_eq!(result, Some(Selection::Worktree(String::from("new"))));
+    assert_eq!(
+        created,
+        vec![(String::from("new"), Some(String::from("main")))]
+    );
+
+    Ok(())
+}
