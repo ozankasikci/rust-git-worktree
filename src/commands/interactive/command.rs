@@ -788,6 +788,10 @@ where
         match self.focus {
             Focus::Worktrees => {
                 if self.worktrees.is_empty() {
+                    if !super::GLOBAL_ACTIONS.is_empty() {
+                        self.focus = Focus::GlobalActions;
+                        self.global_action_selected = 0;
+                    }
                     return;
                 }
                 let next = match self.selected {
