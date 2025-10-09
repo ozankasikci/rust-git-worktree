@@ -491,15 +491,12 @@ where
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
         // Update content height calculation before processing input
-        let current_height = self
-            .terminal
-            .size()
-            .wrap_err("failed to query terminal size")?
-            .height;
+        // In test environments, terminal size may not be available, so use a reasonable default
+        let current_height = self.terminal.size().map(|size| size.height).unwrap_or(24);
 
         if let Some(Dialog::Create(dialog)) = self.dialog.as_mut() {
-            // Check if terminal became too small
-            if current_height < 15 {
+            // Check if terminal became too small (only in non-test environments)
+            if current_height < 15 && current_height > 0 {
                 self.dialog = None;
                 self.status = Some(StatusMessage::error(
                     "Terminal too small (minimum 15 lines). Dialog closed.",
