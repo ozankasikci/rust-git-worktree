@@ -1,5 +1,35 @@
 use super::WorktreeEntry;
 
+/// Calculates initial scroll position to center default branch
+fn calculate_initial_scroll(
+    selected_line: Option<usize>,
+    total_lines: usize,
+    visible_height: usize,
+) -> usize {
+    let selected = selected_line.unwrap_or(0);
+    let ideal_center = selected.saturating_sub(visible_height / 2);
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    ideal_center.min(max_scroll)
+}
+
+/// Represents different types of lines in the scrollable branch list
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum LineType {
+    /// A group header like "Branches" or "Worktrees"
+    GroupHeader { title: String },
+
+    /// A selectable branch option
+    BranchOption {
+        /// Index into base_groups
+        group_idx: usize,
+        /// Index into base_groups[group_idx].options
+        option_idx: usize,
+    },
+
+    /// Empty spacing line between groups
+    EmptyLine,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CreateDialogFocus {
     Name,
@@ -28,6 +58,19 @@ pub(crate) struct CreateDialog {
     pub(crate) base_indices: Vec<(usize, usize)>,
     pub(crate) base_selected: usize,
     pub(crate) error: Option<String>,
+
+    // Scroll state fields
+    /// Flattened list of all renderable lines (headers + branches + spacing)
+    pub(crate) flat_lines: Vec<LineType>,
+
+    /// Index of the first visible line in the viewport
+    pub(crate) scroll_offset: usize,
+
+    /// Last known viewport height (for detecting resize)
+    pub(crate) last_known_height: u16,
+
+    /// Last known content height (viewport minus indicators)
+    pub(crate) last_known_content_height: usize,
 }
 
 impl CreateDialog {
@@ -107,6 +150,44 @@ impl CreateDialog {
             base_selected = 0;
         }
 
+        // Build flat_lines from groups
+        let mut flat_lines = Vec::new();
+        for (group_idx, group) in groups.iter().enumerate() {
+            flat_lines.push(LineType::GroupHeader {
+                title: group.title.clone(),
+            });
+
+            for (option_idx, _) in group.options.iter().enumerate() {
+                flat_lines.push(LineType::BranchOption {
+                    group_idx,
+                    option_idx,
+                });
+            }
+
+            // Add spacing between groups (but not after last)
+            if group_idx < groups.len() - 1 {
+                flat_lines.push(LineType::EmptyLine);
+            }
+        }
+
+        // Calculate initial scroll position to center default branch
+        let selected_line = base_indices
+            .get(base_selected)
+            .and_then(|(target_group, target_option)| {
+                flat_lines.iter().position(|line| {
+                    matches!(
+                        line,
+                        LineType::BranchOption { group_idx, option_idx }
+                        if group_idx == target_group && option_idx == target_option
+                    )
+                })
+            });
+
+        // Use reasonable default for initial visible height
+        let initial_content_height = 6; // Conservative estimate
+        let scroll_offset = calculate_initial_scroll(selected_line, flat_lines.len(), initial_content_height);
+        let last_known_height = 0; // Will be set on first render
+
         Self {
             name_input: String::new(),
             focus: CreateDialogFocus::Name,
@@ -115,6 +196,10 @@ impl CreateDialog {
             base_indices,
             base_selected,
             error: None,
+            flat_lines,
+            scroll_offset,
+            last_known_height,
+            last_known_content_height: initial_content_height,
         }
     }
 
@@ -149,6 +234,53 @@ impl CreateDialog {
         let current = self.base_selected as isize;
         let next = (current + delta).rem_euclid(len);
         self.base_selected = next as usize;
+
+        // Update scroll position to keep selection visible
+        // Use last known content height from rendering
+        self.ensure_selected_visible(self.last_known_content_height);
+    }
+
+    pub(crate) fn find_selected_line(&self) -> Option<usize> {
+        let (target_group, target_option) = self.base_indices.get(self.base_selected)?;
+
+        self.flat_lines.iter().position(|line| {
+            matches!(
+                line,
+                LineType::BranchOption { group_idx, option_idx }
+                if group_idx == target_group && option_idx == target_option
+            )
+        })
+    }
+
+    pub(crate) fn ensure_selected_visible(&mut self, visible_height: usize) {
+        const MARGIN: usize = 2;
+
+        // If viewport is too small, just ensure selection is in range
+        if visible_height == 0 {
+            return;
+        }
+
+        let Some(selected_line) = self.find_selected_line() else {
+            return;
+        };
+
+        let max_scroll = self.flat_lines.len().saturating_sub(visible_height);
+
+        // Calculate safe lower bound (handle case where visible_height < MARGIN)
+        let viewport_end = self.scroll_offset + visible_height;
+        let safe_bottom = viewport_end.saturating_sub(MARGIN);
+
+        // Scroll down if selection below viewport
+        if selected_line >= safe_bottom {
+            self.scroll_offset = (selected_line + MARGIN + 1)
+                .saturating_sub(visible_height)
+                .min(max_scroll);
+        }
+
+        // Scroll up if selection above viewport
+        if selected_line < self.scroll_offset + MARGIN {
+            self.scroll_offset = selected_line.saturating_sub(MARGIN);
+        }
     }
 }
 
@@ -161,6 +293,8 @@ pub(crate) struct CreateDialogView {
     pub(crate) base_selected: usize,
     pub(crate) base_indices: Vec<(usize, usize)>,
     pub(crate) error: Option<String>,
+    pub(crate) flat_lines: Vec<LineType>,
+    pub(crate) scroll_offset: usize,
 }
 
 impl From<&CreateDialog> for CreateDialogView {
@@ -173,6 +307,8 @@ impl From<&CreateDialog> for CreateDialogView {
             base_selected: dialog.base_selected,
             base_indices: dialog.base_indices.clone(),
             error: dialog.error.clone(),
+            flat_lines: dialog.flat_lines.clone(),
+            scroll_offset: dialog.scroll_offset,
         }
     }
 }
