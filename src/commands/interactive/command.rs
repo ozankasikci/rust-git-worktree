@@ -313,8 +313,8 @@ where
             Focus::GlobalActions => match self.global_action_selected {
                 0 => {
                     // Check minimum terminal height before opening create dialog
-                    let (_, height) = crossterm::terminal::size()
-                        .wrap_err("failed to query terminal size")?;
+                    // In test environments, use terminal.size() for consistency
+                    let height = self.terminal.size().map(|size| size.height).unwrap_or(24);
 
                     if height < 15 {
                         self.status = Some(StatusMessage::error(
