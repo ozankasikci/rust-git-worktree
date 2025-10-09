@@ -312,6 +312,17 @@ where
             }
             Focus::GlobalActions => match self.global_action_selected {
                 0 => {
+                    // Check minimum terminal height before opening create dialog
+                    let (_, height) = crossterm::terminal::size()
+                        .wrap_err("failed to query terminal size")?;
+
+                    if height < 15 {
+                        self.status = Some(StatusMessage::error(
+                            "Terminal too small (minimum 15 lines). Please resize your terminal.",
+                        ));
+                        return Ok(LoopControl::Continue);
+                    }
+
                     let dialog =
                         CreateDialog::new(&self.branches, &self.worktrees, self.default_branch());
                     self.dialog = Some(Dialog::Create(dialog));
@@ -479,6 +490,41 @@ where
     where
         G: FnMut(&str, Option<&str>) -> Result<()>,
     {
+        // Update content height calculation before processing input
+        let current_height = self
+            .terminal
+            .size()
+            .wrap_err("failed to query terminal size")?
+            .height;
+
+        if let Some(Dialog::Create(dialog)) = self.dialog.as_mut() {
+            // Check if terminal became too small
+            if current_height < 15 {
+                self.dialog = None;
+                self.status = Some(StatusMessage::error(
+                    "Terminal too small (minimum 15 lines). Dialog closed.",
+                ));
+                return Ok(());
+            }
+
+            // Calculate content height matching the rendering logic:
+            // 70% of terminal height for popup, minus 3+3+3=9 lines for layout sections,
+            // minus 2 for borders, minus 2 for scroll indicators
+            let popup_height = ((current_height as f64) * 0.70) as u16;
+            let base_section_height = popup_height.saturating_sub(9);
+            let available_height = base_section_height.saturating_sub(2);
+            let content_height = (available_height.saturating_sub(2)) as usize; // Reserve 2 for indicators
+
+            // Always update content height (handles both resize and first frame)
+            dialog.last_known_content_height = content_height;
+
+            // Adjust scroll if terminal was resized
+            if dialog.last_known_height != current_height {
+                dialog.last_known_height = current_height;
+                dialog.ensure_selected_visible(content_height);
+            }
+        }
+
         let mut close_dialog = false;
         let mut status_message: Option<StatusMessage> = None;
         let mut submit_requested = false;

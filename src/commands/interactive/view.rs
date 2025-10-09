@@ -9,8 +9,8 @@ use ratatui::{
 use super::{
     Action, Focus, StatusMessage,
     dialog::{
-        CreateDialogFocus, CreateDialogView, MergeDialogFocus, MergeDialogView, RemoveDialogFocus,
-        RemoveDialogView,
+        CreateDialogFocus, CreateDialogView, LineType, MergeDialogFocus, MergeDialogView,
+        RemoveDialogFocus, RemoveDialogView,
     },
 };
 
@@ -328,29 +328,65 @@ impl Snapshot {
         ]);
         frame.render_widget(Paragraph::new(name_line).block(name_block), layout[0]);
 
+        // Calculate available height for viewport (subtract 2 for borders)
+        let available_height = layout[1].height.saturating_sub(2) as usize;
+
         let mut base_lines = Vec::new();
-        for (group_idx, group) in dialog.base_groups.iter().enumerate() {
-            base_lines.push(Line::from(vec![Span::styled(
-                group.title.clone(),
-                Style::default().add_modifier(Modifier::BOLD),
-            )]));
 
-            for (option_idx, option) in group.options.iter().enumerate() {
-                let selected = dialog
-                    .base_indices()
-                    .iter()
-                    .position(|&(g, o)| g == group_idx && o == option_idx)
-                    .map_or(false, |idx| idx == dialog.base_selected);
+        // Reserve space for potential scroll indicators (up to 2 lines)
+        // We need to calculate this before rendering to know how much content fits
+        let will_show_top_indicator = dialog.scroll_offset > 0;
+        let indicator_space = 2; // Always reserve space for both potential indicators
+        let content_height = available_height.saturating_sub(indicator_space);
+        let scroll_end = (dialog.scroll_offset + content_height).min(dialog.flat_lines.len());
+        let will_show_bottom_indicator = scroll_end < dialog.flat_lines.len();
 
-                let mut style = Style::default();
-                if selected {
-                    style = style.fg(Color::Cyan).add_modifier(Modifier::BOLD);
+        // Add scroll-up indicator if scrolled down
+        if will_show_top_indicator {
+            base_lines.push(Line::from(Span::styled(
+                "  ▲ more above",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        for line_type in &dialog.flat_lines[dialog.scroll_offset..scroll_end] {
+            match line_type {
+                LineType::GroupHeader { title } => {
+                    base_lines.push(Line::from(vec![Span::styled(
+                        title.clone(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    )]));
                 }
+                LineType::BranchOption {
+                    group_idx,
+                    option_idx,
+                } => {
+                    let option = &dialog.base_groups[*group_idx].options[*option_idx];
+                    let is_selected = dialog
+                        .base_indices()
+                        .iter()
+                        .position(|&(g, o)| g == *group_idx && o == *option_idx)
+                        .map_or(false, |idx| idx == dialog.base_selected);
 
-                base_lines.push(Line::from(vec![Span::styled(option.label.clone(), style)]));
+                    let mut style = Style::default();
+                    if is_selected {
+                        style = style.fg(Color::Cyan).add_modifier(Modifier::BOLD);
+                    }
+
+                    base_lines.push(Line::from(vec![Span::styled(option.label.clone(), style)]));
+                }
+                LineType::EmptyLine => {
+                    base_lines.push(Line::from(""));
+                }
             }
+        }
 
-            base_lines.push(Line::from(""));
+        // Add scroll-down indicator if more content below
+        if will_show_bottom_indicator {
+            base_lines.push(Line::from(Span::styled(
+                "  ▼ more below",
+                Style::default().fg(Color::DarkGray),
+            )));
         }
 
         let mut base_block = Block::default()
