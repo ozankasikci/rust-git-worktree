@@ -8,6 +8,7 @@ use git2::{
 use ratatui::{
     Terminal,
     backend::Backend,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::ListState,
@@ -23,6 +24,69 @@ use super::{
 };
 use crate::commands::rm::{LocalBranchStatus, RemoveOutcome};
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ActionPanelOrientation {
+    Horizontal,
+    Vertical,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct ActionPanelState {
+    pub orientation: ActionPanelOrientation,
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+}
+
+impl ActionPanelState {
+    pub fn new(orientation: ActionPanelOrientation) -> Self {
+        Self {
+            orientation,
+            selected_index: 0,
+            scroll_offset: 0,
+        }
+    }
+
+    pub fn vertical() -> Self {
+        Self::new(ActionPanelOrientation::Vertical)
+    }
+
+    pub fn ensure_visible(&mut self, visible_rows: usize, total_items: usize) {
+        if total_items == 0 {
+            self.selected_index = 0;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        if self.selected_index >= total_items {
+            self.selected_index = total_items.saturating_sub(1);
+        }
+
+        if visible_rows == 0 {
+            self.scroll_offset = 0;
+            return;
+        }
+
+        if self.selected_index < self.scroll_offset {
+            self.scroll_offset = self.selected_index;
+        } else {
+            let viewport_end = self.scroll_offset + visible_rows;
+            if self.selected_index >= viewport_end {
+                self.scroll_offset = self
+                    .selected_index
+                    .saturating_add(1)
+                    .saturating_sub(visible_rows);
+            }
+        }
+
+        let max_offset = total_items.saturating_sub(visible_rows);
+        if self.scroll_offset > max_offset {
+            self.scroll_offset = max_offset;
+        }
+    }
+}
+
 pub struct InteractiveCommand<B, E>
 where
     B: Backend,
@@ -34,7 +98,7 @@ where
     pub(crate) worktrees: Vec<WorktreeEntry>,
     pub(crate) selected: Option<usize>,
     pub(crate) focus: Focus,
-    pub(crate) action_selected: usize,
+    pub(crate) action_panel: ActionPanelState,
     pub(crate) global_action_selected: usize,
     pub(crate) branches: Vec<String>,
     pub(crate) default_branch: Option<String>,
@@ -67,7 +131,7 @@ where
             worktrees,
             selected,
             focus: Focus::Worktrees,
-            action_selected: 0,
+            action_panel: ActionPanelState::vertical(),
             global_action_selected: 0,
             branches,
             default_branch,
@@ -275,7 +339,7 @@ where
                 }
             }
             Focus::Actions => {
-                let action = Action::from_index(self.action_selected);
+                let action = Action::from_index(self.action_panel.selected_index);
                 match action {
                     Action::Open => {
                         if let Some(entry) = self.current_entry() {
@@ -864,9 +928,12 @@ where
 
     fn move_action(&mut self, delta: isize) {
         let len = Action::ALL.len() as isize;
-        let current = self.action_selected as isize;
+        let current = self.action_panel.selected_index as isize;
         let next = (current + delta).rem_euclid(len);
-        self.action_selected = next as usize;
+        self.action_panel.selected_index = next as usize;
+        let visible_rows = self.action_panel_visible_rows();
+        self.action_panel
+            .ensure_visible(visible_rows, Action::ALL.len());
     }
 
     fn move_global_action(&mut self, delta: isize) {
@@ -877,6 +944,28 @@ where
         let current = self.global_action_selected as isize;
         let next = (current + delta).rem_euclid(len);
         self.global_action_selected = next as usize;
+    }
+
+    fn action_panel_visible_rows(&self) -> usize {
+        let Ok(size) = self.terminal.size() else {
+            return Action::ALL.len();
+        };
+
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(size);
+
+        let panel_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(5),
+                Constraint::Length((Action::ALL.len() as u16).saturating_add(2).max(3)),
+                Constraint::Length(3),
+            ])
+            .split(columns[1]);
+
+        usize::from(panel_layout[1].height.saturating_sub(2))
     }
 
     fn current_entry(&self) -> Option<&WorktreeEntry> {
@@ -938,7 +1027,7 @@ where
             items,
             detail,
             self.focus,
-            self.action_selected,
+            self.action_panel.clone(),
             self.global_action_selected,
             self.status.clone(),
             dialog,

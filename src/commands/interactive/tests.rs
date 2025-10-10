@@ -1,3 +1,4 @@
+use super::command::ActionPanelState;
 use super::*;
 use std::{collections::VecDeque, path::PathBuf};
 
@@ -140,6 +141,67 @@ fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
     assert_eq!(result, Some(Selection::PrGithub(String::from("alpha"))));
 
     Ok(())
+}
+
+#[test]
+fn action_panel_wraps_when_navigating_up() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),
+        key(KeyCode::Up),
+        key(KeyCode::Up),
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+    )?;
+
+    assert_eq!(result, Some(Selection::PrGithub(String::from("alpha"))));
+
+    Ok(())
+}
+
+#[test]
+fn action_panel_scroll_offset_adjusts_to_keep_selection_visible() {
+    let mut state = ActionPanelState::vertical();
+    state.selected_index = 0;
+    state.scroll_offset = 0;
+    state.ensure_visible(3, Action::ALL.len());
+    assert_eq!(
+        state.scroll_offset, 0,
+        "initial selection should be visible"
+    );
+
+    state.selected_index = 3;
+    state.ensure_visible(3, Action::ALL.len());
+    assert_eq!(
+        state.scroll_offset, 1,
+        "scroll offset should advance when selection passes viewport"
+    );
+
+    state.selected_index = 0;
+    state.ensure_visible(3, Action::ALL.len());
+    assert_eq!(
+        state.scroll_offset, 0,
+        "scroll offset should reset when selection moves back to top"
+    );
 }
 
 #[test]

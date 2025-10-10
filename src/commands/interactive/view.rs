@@ -1,11 +1,12 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
+use super::command::ActionPanelState;
 use super::{
     Action, Focus, StatusMessage,
     dialog::{
@@ -18,7 +19,7 @@ pub(crate) struct Snapshot {
     items: Vec<String>,
     detail: Option<DetailData>,
     focus: Focus,
-    action_selected: usize,
+    action_panel: ActionPanelState,
     global_action_selected: usize,
     status: Option<StatusMessage>,
     dialog: Option<DialogView>,
@@ -51,7 +52,7 @@ impl Snapshot {
         items: Vec<String>,
         detail: Option<DetailData>,
         focus: Focus,
-        action_selected: usize,
+        action_panel: ActionPanelState,
         global_action_selected: usize,
         status: Option<StatusMessage>,
         dialog: Option<DialogView>,
@@ -61,7 +62,7 @@ impl Snapshot {
             items,
             detail,
             focus,
-            action_selected,
+            action_panel,
             global_action_selected,
             status,
             dialog,
@@ -115,57 +116,110 @@ impl Snapshot {
     }
 
     fn render_details(&self, frame: &mut Frame, area: Rect) {
-        let detail_chunks = Layout::default()
+        let list_height = (Action::ALL.len() as u16).saturating_add(2).max(3);
+        let panel_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(5), Constraint::Length(3)])
+            .constraints([
+                Constraint::Min(5),
+                Constraint::Length(list_height),
+                Constraint::Length(3),
+            ])
             .split(area);
 
-        let mut lines = if let Some(detail) = &self.detail {
+        let detail_lines = if let Some(detail) = &self.detail {
             detail.lines.clone()
         } else {
             vec![Line::from("No worktree selected.")]
         };
+        let detail_block = Paragraph::new(detail_lines)
+            .block(Block::default().title("Details").borders(Borders::ALL));
+        frame.render_widget(detail_block, panel_layout[0]);
 
-        lines.push(Line::from(""));
-        if let Some(status) = &self.status {
-            lines.push(Line::from(Span::styled(
-                status.text.clone(),
-                status.style(),
-            )));
-        } else {
-            lines.push(Line::from("Use Tab to focus actions. Esc exits."));
-        }
-
-        let info =
-            Paragraph::new(lines).block(Block::default().title("Details").borders(Borders::ALL));
-        frame.render_widget(info, detail_chunks[0]);
-
-        let mut spans = Vec::new();
-        for (idx, action) in Action::ALL.iter().enumerate() {
-            if idx > 0 {
-                spans.push(Span::raw("  "));
-            }
-
+        let mut items = Vec::new();
+        for action in Action::ALL.iter() {
             let mut style = Style::default();
             if action.requires_selection() && !self.has_worktrees {
                 style = style.add_modifier(Modifier::DIM);
             }
-
-            if self.focus == Focus::Actions && self.action_selected == idx {
-                style = style
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-            }
-
-            spans.push(Span::styled(format!("[{}]", action.label()), style));
+            items.push(ListItem::new(Line::from(Span::styled(
+                format!("[{}]", action.label()),
+                style,
+            ))));
         }
 
-        let actions = Paragraph::new(Line::from(spans)).block(
-            Block::default()
-                .title("Worktree Actions (Tab key)")
-                .borders(Borders::ALL),
-        );
-        frame.render_widget(actions, detail_chunks[1]);
+        let is_actions_focused = self.focus == Focus::Actions;
+        let mut list_state = ListState::default()
+            .with_selected(Some(self.action_panel.selected_index))
+            .with_offset(self.action_panel.scroll_offset);
+
+        let highlight_style = if is_actions_focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else {
+            Style::default()
+        };
+        let highlight_symbol = if is_actions_focused { "▶ " } else { "  " };
+
+        let action_list = List::new(items)
+            .block(
+                Block::default()
+                    .title("Worktree Actions (Tab key)")
+                    .borders(Borders::ALL),
+            )
+            .highlight_symbol(highlight_symbol)
+            .highlight_style(highlight_style);
+
+        frame.render_stateful_widget(action_list, panel_layout[1], &mut list_state);
+
+        let list_area = panel_layout[1];
+        let visible_rows = usize::from(list_area.height.saturating_sub(2));
+        let total_items = Action::ALL.len();
+        let show_top_indicator = visible_rows > 0 && self.action_panel.scroll_offset > 0;
+        let show_bottom_indicator =
+            visible_rows > 0 && self.action_panel.scroll_offset + visible_rows < total_items;
+
+        if list_area.width > 2 && list_area.height > 2 {
+            let indicator_x = list_area
+                .x
+                .saturating_add(list_area.width.saturating_sub(2));
+
+            if show_top_indicator {
+                let top_area = Rect::new(indicator_x, list_area.y.saturating_add(1), 1, 1);
+                frame.render_widget(
+                    Paragraph::new("▲")
+                        .alignment(Alignment::Right)
+                        .style(Style::default().fg(Color::Gray)),
+                    top_area,
+                );
+            }
+
+            if show_bottom_indicator {
+                let bottom_area = Rect::new(
+                    indicator_x,
+                    list_area
+                        .y
+                        .saturating_add(list_area.height.saturating_sub(2)),
+                    1,
+                    1,
+                );
+                frame.render_widget(
+                    Paragraph::new("▼")
+                        .alignment(Alignment::Right)
+                        .style(Style::default().fg(Color::Gray)),
+                    bottom_area,
+                );
+            }
+        }
+
+        let status_line = if let Some(status) = &self.status {
+            Line::from(Span::styled(status.text.clone(), status.style()))
+        } else {
+            Line::from("Use Tab to focus actions. Esc exits.")
+        };
+        let status = Paragraph::new(vec![status_line])
+            .block(Block::default().title("Status").borders(Borders::ALL));
+        frame.render_widget(status, panel_layout[2]);
     }
 
     fn render_remove(&self, frame: &mut Frame, area: Rect, name: &str, dialog: &RemoveDialogView) {

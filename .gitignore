@@ -1,5 +1,8 @@
 /target
 .rsworktree/
+.codex/
+.specify/
 .DS_Store
 specs/
 CLAUDE.md
+AGENTS.md
