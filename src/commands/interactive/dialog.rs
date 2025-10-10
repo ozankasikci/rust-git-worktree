@@ -171,21 +171,23 @@ impl CreateDialog {
         }
 
         // Calculate initial scroll position to center default branch
-        let selected_line = base_indices
-            .get(base_selected)
-            .and_then(|(target_group, target_option)| {
-                flat_lines.iter().position(|line| {
-                    matches!(
-                        line,
-                        LineType::BranchOption { group_idx, option_idx }
-                        if group_idx == target_group && option_idx == target_option
-                    )
-                })
-            });
+        let selected_line =
+            base_indices
+                .get(base_selected)
+                .and_then(|(target_group, target_option)| {
+                    flat_lines.iter().position(|line| {
+                        matches!(
+                            line,
+                            LineType::BranchOption { group_idx, option_idx }
+                            if group_idx == target_group && option_idx == target_option
+                        )
+                    })
+                });
 
         // Use reasonable default for initial visible height
         let initial_content_height = 6; // Conservative estimate
-        let scroll_offset = calculate_initial_scroll(selected_line, flat_lines.len(), initial_content_height);
+        let scroll_offset =
+            calculate_initial_scroll(selected_line, flat_lines.len(), initial_content_height);
         let last_known_height = 0; // Will be set on first render
 
         Self {

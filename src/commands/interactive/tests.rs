@@ -677,7 +677,11 @@ fn down_with_no_worktrees_opens_create_dialog() -> Result<()> {
 
 #[test]
 fn find_selected_line_locates_branch_in_flat_lines() {
-    let branches = vec!["main".to_string(), "develop".to_string(), "feature".to_string()];
+    let branches = vec![
+        "main".to_string(),
+        "develop".to_string(),
+        "feature".to_string(),
+    ];
     let dialog = dialog::CreateDialog::new(&branches, &[], Some("develop"));
 
     let selected_line = dialog.find_selected_line();
@@ -766,7 +770,10 @@ fn scroll_offset_never_exceeds_content_bounds() {
     dialog.ensure_selected_visible(visible_height);
 
     let max_offset = dialog.flat_lines.len().saturating_sub(visible_height);
-    assert_eq!(dialog.scroll_offset, 0, "scroll should be 0 when viewport larger than content");
+    assert_eq!(
+        dialog.scroll_offset, 0,
+        "scroll should be 0 when viewport larger than content"
+    );
     assert!(dialog.scroll_offset <= max_offset);
 }
 
@@ -809,7 +816,10 @@ fn wrap_around_from_last_to_first_adjusts_scroll() {
     dialog.move_base(1);
 
     assert_eq!(dialog.base_selected, 0);
-    assert_eq!(dialog.scroll_offset, 0, "scroll should reset to top after wrap-around");
+    assert_eq!(
+        dialog.scroll_offset, 0,
+        "scroll should reset to top after wrap-around"
+    );
 }
 
 #[test]
@@ -823,12 +833,13 @@ fn scroll_with_multiple_groups() {
     let dialog = dialog::CreateDialog::new(&branches, &worktrees, Some("main"));
 
     // Verify flat_lines includes both groups
-    let has_branch_header = dialog.flat_lines.iter().any(|line| {
-        matches!(line, dialog::LineType::GroupHeader { title } if title == "Branches")
-    });
-    let has_worktree_header = dialog.flat_lines.iter().any(|line| {
-        matches!(line, dialog::LineType::GroupHeader { title } if title == "Worktrees")
-    });
+    let has_branch_header = dialog
+        .flat_lines
+        .iter()
+        .any(|line| matches!(line, dialog::LineType::GroupHeader { title } if title == "Branches"));
+    let has_worktree_header = dialog.flat_lines.iter().any(
+        |line| matches!(line, dialog::LineType::GroupHeader { title } if title == "Worktrees"),
+    );
 
     assert!(has_branch_header, "should have Branches header");
     assert!(has_worktree_header, "should have Worktrees header");
