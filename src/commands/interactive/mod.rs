@@ -54,14 +54,16 @@ pub(crate) enum Selection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Action {
     Open,
+    OpenInEditor,
     Remove,
     PrGithub,
     MergePrGithub,
 }
 
 impl Action {
-    pub(crate) const ALL: [Action; 4] = [
+    pub(crate) const ALL: [Action; 5] = [
         Action::Open,
+        Action::OpenInEditor,
         Action::Remove,
         Action::PrGithub,
         Action::MergePrGithub,
@@ -70,6 +72,7 @@ impl Action {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Action::Open => "Open",
+            Action::OpenInEditor => "Open in Editor",
             Action::Remove => "Remove",
             Action::PrGithub => "PR (GitHub)",
             Action::MergePrGithub => "Merge PR (GitHub)",
@@ -79,7 +82,11 @@ impl Action {
     pub(crate) fn requires_selection(self) -> bool {
         matches!(
             self,
-            Action::Open | Action::Remove | Action::PrGithub | Action::MergePrGithub
+            Action::Open
+                | Action::OpenInEditor
+                | Action::Remove
+                | Action::PrGithub
+                | Action::MergePrGithub
         )
     }
 

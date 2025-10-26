@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use color_eyre::{Result, eyre::WrapErr};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -22,7 +22,11 @@ use super::{
     },
     view::{DetailData, DialogView, Snapshot},
 };
-use crate::commands::rm::{LocalBranchStatus, RemoveOutcome};
+use crate::{
+    commands::rm::{LocalBranchStatus, RemoveOutcome},
+    editor::LaunchOutcome,
+    telemetry::EditorLaunchStatus,
+};
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -140,16 +144,22 @@ where
         }
     }
 
-    pub fn run<F, G>(mut self, mut on_remove: F, mut on_create: G) -> Result<Option<Selection>>
+    pub fn run<F, G, H>(
+        mut self,
+        mut on_remove: F,
+        mut on_create: G,
+        mut on_open_editor: H,
+    ) -> Result<Option<Selection>>
     where
         F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
+        H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
     {
         self.terminal
             .hide_cursor()
             .wrap_err("failed to hide cursor")?;
 
-        let result = self.event_loop(&mut on_remove, &mut on_create);
+        let result = self.event_loop(&mut on_remove, &mut on_create, &mut on_open_editor);
 
         self.terminal
             .clear()
@@ -161,14 +171,16 @@ where
         result
     }
 
-    fn event_loop<F, G>(
+    fn event_loop<F, G, H>(
         &mut self,
         on_remove: &mut F,
         on_create: &mut G,
+        on_open_editor: &mut H,
     ) -> Result<Option<Selection>>
     where
         F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
+        H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
     {
         let mut state = ListState::default();
         self.sync_selection(&mut state);
@@ -179,23 +191,25 @@ where
                 .draw(|frame| snapshot.render(frame, &mut state))?;
             let event = self.events.next()?;
 
-            match self.process_event(event, &mut state, on_remove, on_create)? {
+            match self.process_event(event, &mut state, on_remove, on_create, on_open_editor)? {
                 LoopControl::Continue => {}
                 LoopControl::Exit(outcome) => return Ok(outcome),
             }
         }
     }
 
-    fn process_event<F, G>(
+    fn process_event<F, G, H>(
         &mut self,
         event: Event,
         state: &mut ListState,
         on_remove: &mut F,
         on_create: &mut G,
+        on_open_editor: &mut H,
     ) -> Result<LoopControl>
     where
         F: FnMut(&str, bool) -> Result<RemoveOutcome>,
         G: FnMut(&str, Option<&str>) -> Result<()>,
+        H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
     {
         if let Some(dialog) = self.dialog.clone() {
             match dialog {
@@ -260,6 +274,21 @@ where
                 self.handle_down(state);
                 Ok(LoopControl::Continue)
             }
+            KeyCode::Char('e') | KeyCode::Char('E') => match self.focus {
+                Focus::Worktrees => {
+                    if let Some(entry) = self.current_entry().cloned() {
+                        self.trigger_open_in_editor(on_open_editor, &entry.name, &entry.path)?;
+                    } else {
+                        self.status = Some(StatusMessage::info("No worktree selected."));
+                    }
+                    Ok(LoopControl::Continue)
+                }
+                Focus::Actions => {
+                    self.select_action(Action::OpenInEditor);
+                    self.handle_enter(on_open_editor)
+                }
+                Focus::GlobalActions => Ok(LoopControl::Continue),
+            },
             KeyCode::Left => {
                 match self.focus {
                     Focus::Actions => self.move_action(-1),
@@ -276,7 +305,7 @@ where
                 }
                 Ok(LoopControl::Continue)
             }
-            KeyCode::Enter => self.handle_enter(),
+            KeyCode::Enter => self.handle_enter(on_open_editor),
             _ => Ok(LoopControl::Continue),
         }
     }
@@ -327,7 +356,10 @@ where
         };
     }
 
-    fn handle_enter(&mut self) -> Result<LoopControl> {
+    fn handle_enter<H>(&mut self, on_open_editor: &mut H) -> Result<LoopControl>
+    where
+        H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
+    {
         match self.focus {
             Focus::Worktrees => {
                 if let Some(index) = self.selected {
@@ -348,6 +380,14 @@ where
                             ))));
                         }
                         self.status = Some(StatusMessage::info("No worktree selected."));
+                    }
+                    Action::OpenInEditor => {
+                        if let Some(entry) = self.current_entry().cloned() {
+                            self.trigger_open_in_editor(on_open_editor, &entry.name, &entry.path)?;
+                        } else {
+                            self.status = Some(StatusMessage::info("No worktree selected."));
+                        }
+                        return Ok(LoopControl::Continue);
                     }
                     Action::Remove => {
                         if let Some(index) = self.selected {
@@ -934,6 +974,46 @@ where
         let visible_rows = self.action_panel_visible_rows();
         self.action_panel
             .ensure_visible(visible_rows, Action::ALL.len());
+    }
+
+    fn select_action(&mut self, action: Action) {
+        if let Some(index) = Action::ALL
+            .iter()
+            .position(|candidate| *candidate == action)
+        {
+            self.action_panel.selected_index = index;
+            let visible_rows = self.action_panel_visible_rows();
+            self.action_panel
+                .ensure_visible(visible_rows, Action::ALL.len());
+        }
+    }
+
+    fn trigger_open_in_editor<H>(
+        &mut self,
+        on_open_editor: &mut H,
+        name: &str,
+        path: &Path,
+    ) -> Result<()>
+    where
+        H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
+    {
+        match on_open_editor(name, path) {
+            Ok(outcome) => {
+                let status = match outcome.status {
+                    EditorLaunchStatus::Success | EditorLaunchStatus::PreferenceMissing => {
+                        StatusMessage::info(outcome.message)
+                    }
+                    _ => StatusMessage::error(outcome.message),
+                };
+                self.status = Some(status);
+            }
+            Err(error) => {
+                self.status = Some(StatusMessage::error(format!(
+                    "Failed to open `{name}`: {error}"
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn move_global_action(&mut self, delta: isize) {

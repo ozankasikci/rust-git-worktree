@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 
@@ -12,6 +12,7 @@ use crate::{
         interactive,
         list::ListCommand,
         merge_pr_github::MergePrGithubCommand,
+        open_editor::OpenEditorCommand,
         pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
@@ -35,12 +36,21 @@ enum Commands {
     /// Interactively browse and open worktrees.
     #[command(alias = "i")]
     Interactive,
+    /// Worktree scoped commands.
+    #[command(subcommand)]
+    Worktree(WorktreeCommands),
     /// Remove a worktree tracked in `.rsworktree`.
     Rm(RmArgs),
     /// Create a GitHub pull request for the worktree's branch using the GitHub CLI.
     PrGithub(PrGithubArgs),
     /// Merge the GitHub pull request for the current or named worktree.
     MergePrGithub(MergePrGithubArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum WorktreeCommands {
+    /// Open a worktree in the configured editor.
+    OpenEditor(OpenEditorArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -68,6 +78,16 @@ struct RmArgs {
     /// Force removal even if the worktree has uncommitted changes
     #[arg(long)]
     force: bool,
+}
+
+#[derive(Parser, Debug)]
+struct OpenEditorArgs {
+    /// Name of the worktree to open
+    #[arg(required_unless_present = "path")]
+    name: Option<String>,
+    /// Open a worktree by absolute path instead of managed name
+    #[arg(long, value_name = "path", conflicts_with = "name")]
+    path: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -126,6 +146,12 @@ pub fn run() -> color_eyre::Result<()> {
         Commands::Interactive => {
             interactive::run(&repo)?;
         }
+        Commands::Worktree(command) => match command {
+            WorktreeCommands::OpenEditor(args) => {
+                let command = OpenEditorCommand::new(args.name, args.path);
+                command.execute(&repo)?;
+            }
+        },
         Commands::Rm(args) => {
             let command = RemoveCommand::new(args.name, args.force);
             let _ = command.execute(&repo)?;

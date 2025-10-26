@@ -18,6 +18,7 @@ use crate::{
         pr_github::{PrGithubCommand, PrGithubOptions},
         rm::RemoveCommand,
     },
+    editor::launch_worktree,
 };
 
 use super::{EventSource, Selection, WorktreeEntry, command::InteractiveCommand};
@@ -82,6 +83,7 @@ pub fn run(repo: &Repo) -> Result<()> {
                 )),
             }
         },
+        |name, path| launch_worktree(repo, name, path),
     );
     let cleanup_result = cleanup_terminal();
 

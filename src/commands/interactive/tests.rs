@@ -6,7 +6,11 @@ use color_eyre::{Result, eyre};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
-use crate::commands::rm::{LocalBranchStatus, RemoveOutcome};
+use crate::{
+    commands::rm::{LocalBranchStatus, RemoveOutcome},
+    editor::LaunchOutcome,
+    telemetry::EditorLaunchStatus,
+};
 
 struct StubEvents {
     events: VecDeque<Event>,
@@ -43,6 +47,15 @@ fn entries(names: &[&str]) -> Vec<WorktreeEntry> {
         .collect()
 }
 
+fn noop_open_editor() -> impl FnMut(&str, &std::path::Path) -> Result<LaunchOutcome> {
+    move |_, _| {
+        Ok(LaunchOutcome {
+            status: EditorLaunchStatus::Success,
+            message: String::new(),
+        })
+    }
+}
+
 #[test]
 fn returns_first_worktree_when_enter_pressed_immediately() -> Result<()> {
     let backend = TestBackend::new(40, 10);
@@ -67,6 +80,7 @@ fn returns_first_worktree_when_enter_pressed_immediately() -> Result<()> {
                 })
             },
             |_, _| panic!("create should not be called"),
+            noop_open_editor(),
         )?
         .expect("expected selection");
     assert_eq!(selection, Selection::Worktree(String::from("alpha")));
@@ -98,6 +112,7 @@ fn navigates_down_before_selecting() -> Result<()> {
                 })
             },
             |_, _| panic!("create should not be called"),
+            noop_open_editor(),
         )?
         .expect("expected selection");
     assert_eq!(selection, Selection::Worktree(String::from("beta")));
@@ -111,6 +126,7 @@ fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
         key(KeyCode::Tab),
+        key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Enter),
@@ -135,6 +151,7 @@ fn selecting_pr_github_action_exits_with_pr_variant() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert!(removed.is_empty(), "remove should not be triggered");
@@ -171,6 +188,7 @@ fn action_panel_wraps_when_navigating_up() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::PrGithub(String::from("alpha"))));
@@ -213,6 +231,7 @@ fn selecting_merge_action_collects_cleanup_choices() -> Result<()> {
         key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Down),
+        key(KeyCode::Down),
         key(KeyCode::Enter),
         key(KeyCode::Down),
         char_key(' '),
@@ -239,6 +258,7 @@ fn selecting_merge_action_collects_cleanup_choices() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     match result {
@@ -268,6 +288,7 @@ fn merge_dialog_allows_disabling_local_branch_removal() -> Result<()> {
         key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Down),
+        key(KeyCode::Down),
         key(KeyCode::Enter),
         char_key(' '),
         key(KeyCode::Tab),
@@ -291,6 +312,7 @@ fn merge_dialog_allows_disabling_local_branch_removal() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     match result {
@@ -319,6 +341,7 @@ fn tabbing_to_actions_removes_selected_worktree() -> Result<()> {
         key(KeyCode::Down),
         key(KeyCode::Tab),
         key(KeyCode::Down),
+        key(KeyCode::Down),
         key(KeyCode::Enter),
         char_key('y'),
         key(KeyCode::Enter),
@@ -344,6 +367,7 @@ fn tabbing_to_actions_removes_selected_worktree() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert!(
@@ -361,6 +385,7 @@ fn remove_dialog_allows_disabling_local_branch_removal() -> Result<()> {
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
         key(KeyCode::Tab),
+        key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Enter),
         char_key(' '),
@@ -389,6 +414,7 @@ fn remove_dialog_allows_disabling_local_branch_removal() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert!(result.is_none());
@@ -403,6 +429,7 @@ fn removing_current_worktree_requests_root_exit() -> Result<()> {
     let terminal = Terminal::new(backend)?;
     let events = StubEvents::new(vec![
         key(KeyCode::Tab),
+        key(KeyCode::Down),
         key(KeyCode::Down),
         key(KeyCode::Enter),
         char_key('y'),
@@ -428,6 +455,7 @@ fn removing_current_worktree_requests_root_exit() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert_eq!(removed, vec![(String::from("alpha"), true)]);
@@ -467,6 +495,7 @@ fn cancelling_remove_keeps_worktree() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert!(result.is_none());
@@ -514,6 +543,7 @@ fn create_action_adds_new_worktree() -> Result<()> {
             created.push((name.to_string(), base.map(|b| b.to_string())));
             Ok(())
         },
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::Worktree(String::from("new"))));
@@ -555,6 +585,7 @@ fn cancelling_create_leaves_state_unchanged() -> Result<()> {
             })
         },
         |_, _| panic!("create should not be called"),
+        noop_open_editor(),
     )?;
 
     assert!(result.is_none());
@@ -586,6 +617,7 @@ fn cd_to_root_global_action_exits() -> Result<()> {
             })
         },
         |_, _| Ok(()),
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
@@ -617,6 +649,7 @@ fn up_from_top_moves_to_global_actions() -> Result<()> {
             })
         },
         |_, _| Ok(()),
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
@@ -653,6 +686,7 @@ fn up_from_top_after_tabbing_picks_last_global_action() -> Result<()> {
             })
         },
         |_, _| Ok(()),
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
@@ -684,6 +718,7 @@ fn up_with_no_worktrees_moves_to_global_actions() -> Result<()> {
             })
         },
         |_, _| Ok(()),
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::RepoRoot));
@@ -724,6 +759,7 @@ fn down_with_no_worktrees_opens_create_dialog() -> Result<()> {
             created.push((name.to_string(), base.map(|b| b.to_string())));
             Ok(())
         },
+        noop_open_editor(),
     )?;
 
     assert_eq!(result, Some(Selection::Worktree(String::from("new"))));

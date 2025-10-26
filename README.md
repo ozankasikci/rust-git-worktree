@@ -14,6 +14,7 @@
   - [`rsworktree rm`](#rsworktree-rm)
   - [`rsworktree pr-github`](#rsworktree-pr-github)
   - [`rsworktree merge-pr-github`](#rsworktree-merge-pr-github)
+  - [`rsworktree worktree open-editor`](#rsworktree-worktree-open-editor)
 - [Installation](#installation)
 - [Environment](#environment)
 
@@ -21,7 +22,8 @@
 
 - Open a terminal UI for browsing worktrees, focusing actions, and inspecting details without memorizing subcommands.
 - Launch it with the `interactive` command: `rsworktree interactive` (shortcut: `rsworktree i`).
-- Available actions include opening worktrees, removing them, creating PRs, and merging PRs without leaving the TUI.
+- Available actions include opening worktrees, launching editors, removing worktrees, creating PRs, and merging PRs without leaving the TUI.
+- Use the **Open in Editor** action to launch the highlighted worktree in your configured editor (initial support covers `vim`, `cursor`, `webstorm`, and `rider`; see the quickstart for setup guidance).
 - The merge flow lets you decide whether to keep the local branch, delete the remote branch, and clean up the worktree before exiting.
 - ![Interactive mode screenshot](tapes/gifs/interactive-mode.gif)
 
@@ -78,6 +80,12 @@
 - Options:
   - `<name>` — optional explicit worktree to operate on; defaults to the current directory.
 
+### `rsworktree worktree open-editor`
+
+- Open the specified worktree (or the current directory when omitted) in your configured editor.
+- Editor resolution checks the rsworktree config first, then falls back to `$EDITOR` / `$VISUAL`. If no editor is configured, the command prints actionable guidance instead of failing.
+- Initial support focuses on `vim`, `cursor`, `webstorm`, and `rider`. For setup instructions and troubleshooting, see `specs/002-i-want-to/quickstart.md`.
+
 ## Installation
 
 Install from crates.io with:
@@ -98,4 +106,3 @@ After the binary is on your `PATH`, run `rsworktree --help` to explore the avail
 ## Environment
 
 Set `RSWORKTREE_SHELL` to override the shell used by `rsworktree cd` (falls back to `$SHELL` or `/bin/sh`).
-
