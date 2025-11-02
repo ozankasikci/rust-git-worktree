@@ -83,7 +83,7 @@ pub fn run(repo: &Repo) -> Result<()> {
                 )),
             }
         },
-        |name, path| launch_worktree(repo, name, path),
+        |name, path| launch_worktree(repo, name, path, true),
     );
     let cleanup_result = cleanup_terminal();
 

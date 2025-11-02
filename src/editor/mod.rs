@@ -4,10 +4,7 @@ mod support;
 
 use std::path::Path;
 
-use crate::{
-    Repo,
-    telemetry::{EditorLaunchStatus, log_editor_launch_attempt},
-};
+use crate::{Repo, telemetry::EditorLaunchStatus};
 
 pub use launch::{LaunchOutcome, LaunchRequest, launch_editor};
 pub use preference::{
@@ -21,33 +18,17 @@ pub fn launch_worktree(
     repo: &Repo,
     worktree_name: &str,
     worktree_path: &Path,
+    wait_for_completion: bool,
 ) -> color_eyre::Result<LaunchOutcome> {
     let resolution = resolve_editor_preference(repo)?;
     let outcome = match resolution {
-        EditorPreferenceResolution::Found(preference) => {
-            let outcome = launch_editor(LaunchRequest {
-                preference: &preference,
-                worktree_name,
-                worktree_path,
-            });
-            log_editor_launch_attempt(
-                worktree_name,
-                worktree_path,
-                outcome.status,
-                &outcome.message,
-            );
-            outcome
-        }
-        EditorPreferenceResolution::Missing(reason) => {
-            let outcome = missing_preference_outcome(reason);
-            log_editor_launch_attempt(
-                worktree_name,
-                worktree_path,
-                outcome.status,
-                &outcome.message,
-            );
-            outcome
-        }
+        EditorPreferenceResolution::Found(preference) => launch_editor(LaunchRequest {
+            preference: &preference,
+            worktree_name,
+            worktree_path,
+            wait_for_completion,
+        }),
+        EditorPreferenceResolution::Missing(reason) => missing_preference_outcome(reason),
     };
 
     Ok(outcome)

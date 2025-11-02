@@ -526,10 +526,19 @@ impl From<MergeDialog> for MergeDialogView {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum InfoDialogKind {
+    Info,
+    Error,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum Dialog {
     Remove(RemoveDialog),
-    Info { message: String },
+    Info {
+        message: String,
+        kind: InfoDialogKind,
+    },
     Create(CreateDialog),
     Merge(MergeDialog),
 }

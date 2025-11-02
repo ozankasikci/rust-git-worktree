@@ -6,7 +6,7 @@ use crate::{
     Repo,
     commands::list::{find_worktrees, format_worktree},
     editor::launch_worktree,
-    telemetry::EditorLaunchStatus,
+    telemetry::{EditorLaunchStatus, log_editor_launch_attempt},
 };
 
 pub struct OpenEditorCommand {
@@ -21,7 +21,26 @@ impl OpenEditorCommand {
 
     pub fn execute(&self, repo: &Repo) -> color_eyre::Result<()> {
         let resolved = self.resolve_target(repo)?;
-        let outcome = launch_worktree(repo, &resolved.name, &resolved.path)?;
+        let outcome = match launch_worktree(repo, &resolved.name, &resolved.path, false) {
+            Ok(outcome) => {
+                log_editor_launch_attempt(
+                    &resolved.name,
+                    &resolved.path,
+                    outcome.status,
+                    &outcome.message,
+                );
+                outcome
+            }
+            Err(error) => {
+                log_editor_launch_attempt(
+                    &resolved.name,
+                    &resolved.path,
+                    EditorLaunchStatus::ConfigurationError,
+                    &error.to_string(),
+                );
+                return Err(error);
+            }
+        };
 
         match outcome.status {
             EditorLaunchStatus::Success => {

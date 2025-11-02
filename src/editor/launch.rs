@@ -8,6 +8,7 @@ pub struct LaunchRequest<'a> {
     pub preference: &'a EditorPreference,
     pub worktree_name: &'a str,
     pub worktree_path: &'a Path,
+    pub wait_for_completion: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -32,33 +33,79 @@ pub fn launch_editor(request: LaunchRequest<'_>) -> LaunchOutcome {
     command.args(&request.preference.args);
     command.arg(request.worktree_path);
 
-    match command.spawn() {
-        Ok(_) => LaunchOutcome {
-            status: EditorLaunchStatus::Success,
-            message: format!(
-                "Launched `{}` using `{}`",
-                request.worktree_name,
-                format_command(&request.preference.command)
-            ),
-        },
-        Err(error) => match error.kind() {
-            io::ErrorKind::NotFound => LaunchOutcome {
-                status: EditorLaunchStatus::EditorMissing,
+    if request.wait_for_completion {
+        // For interactive mode: wait for editor to complete
+        match command.status() {
+            Ok(status) => {
+                if status.success() {
+                    LaunchOutcome {
+                        status: EditorLaunchStatus::Success,
+                        message: format!(
+                            "Launched `{}` using `{}`",
+                            request.worktree_name,
+                            format_command(&request.preference.command)
+                        ),
+                    }
+                } else {
+                    LaunchOutcome {
+                        status: EditorLaunchStatus::SpawnError,
+                        message: format!(
+                            "Editor `{}` exited with status: {}",
+                            format_command(&request.preference.command),
+                            status
+                        ),
+                    }
+                }
+            }
+            Err(error) => match error.kind() {
+                io::ErrorKind::NotFound => LaunchOutcome {
+                    status: EditorLaunchStatus::EditorMissing,
+                    message: format!(
+                        "Editor command `{}` was not found on PATH. Install the editor or update the configured command.",
+                        format_command(&request.preference.command)
+                    ),
+                },
+                _ => LaunchOutcome {
+                    status: EditorLaunchStatus::SpawnError,
+                    message: format!(
+                        "Failed to launch `{}` via `{}`: {}",
+                        request.worktree_name,
+                        format_command(&request.preference.command),
+                        error
+                    ),
+                },
+            },
+        }
+    } else {
+        // For non-interactive mode: spawn in background
+        match command.spawn() {
+            Ok(_) => LaunchOutcome {
+                status: EditorLaunchStatus::Success,
                 message: format!(
-                    "Editor command `{}` was not found on PATH. Install the editor or update the configured command.",
+                    "Launched `{}` using `{}`",
+                    request.worktree_name,
                     format_command(&request.preference.command)
                 ),
             },
-            _ => LaunchOutcome {
-                status: EditorLaunchStatus::SpawnError,
-                message: format!(
-                    "Failed to launch `{}` via `{}`: {}",
-                    request.worktree_name,
-                    format_command(&request.preference.command),
-                    error
-                ),
+            Err(error) => match error.kind() {
+                io::ErrorKind::NotFound => LaunchOutcome {
+                    status: EditorLaunchStatus::EditorMissing,
+                    message: format!(
+                        "Editor command `{}` was not found on PATH. Install the editor or update the configured command.",
+                        format_command(&request.preference.command)
+                    ),
+                },
+                _ => LaunchOutcome {
+                    status: EditorLaunchStatus::SpawnError,
+                    message: format!(
+                        "Failed to launch `{}` via `{}`: {}",
+                        request.worktree_name,
+                        format_command(&request.preference.command),
+                        error
+                    ),
+                },
             },
-        },
+        }
     }
 }
 
@@ -86,6 +133,7 @@ mod tests {
             },
             worktree_name: "feature",
             worktree_path: Path::new("/nonexistent/path"),
+            wait_for_completion: false,
         };
 
         let outcome = launch_editor(request);
@@ -106,6 +154,7 @@ mod tests {
             },
             worktree_name: "feature",
             worktree_path,
+            wait_for_completion: false,
         };
 
         let outcome = launch_editor(request);

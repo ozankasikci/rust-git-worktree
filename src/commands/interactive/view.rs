@@ -1,17 +1,17 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 
 use super::command::ActionPanelState;
 use super::{
     Action, Focus, StatusMessage,
     dialog::{
-        CreateDialogFocus, CreateDialogView, LineType, MergeDialogFocus, MergeDialogView,
-        RemoveDialogFocus, RemoveDialogView,
+        CreateDialogFocus, CreateDialogView, InfoDialogKind, LineType, MergeDialogFocus,
+        MergeDialogView, RemoveDialogFocus, RemoveDialogView,
     },
 };
 
@@ -39,6 +39,7 @@ pub(crate) enum DialogView {
     },
     Info {
         message: String,
+        kind: InfoDialogKind,
     },
     Create(CreateDialogView),
     Merge {
@@ -93,7 +94,7 @@ impl Snapshot {
                 DialogView::Remove { name, dialog } => {
                     self.render_remove(frame, size, name, dialog)
                 }
-                DialogView::Info { message } => self.render_info(frame, size, message),
+                DialogView::Info { message, kind } => self.render_info(frame, size, message, *kind),
                 DialogView::Create(create) => self.render_create(frame, size, create),
                 DialogView::Merge { name, dialog } => self.render_merge(frame, size, name, dialog),
             }
@@ -301,29 +302,60 @@ impl Snapshot {
         frame.render_widget(buttons_block, layout[2]);
     }
 
-    fn render_info(&self, frame: &mut Frame, area: Rect, message: &str) {
-        let popup_area = centered_rect(60, 30, area);
+    fn render_info(&self, frame: &mut Frame, area: Rect, message: &str, kind: InfoDialogKind) {
+        let popup_area = centered_rect(70, 50, area);
         frame.render_widget(Clear, popup_area);
 
-        let lines = vec![
-            Line::from(message.to_owned()),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[ OK ]",
+        let (title, border_style) = match kind {
+            InfoDialogKind::Info => (
+                "Notice",
                 Style::default()
                     .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            )),
-            Line::from("Press Enter to continue."),
-        ];
+                    .add_modifier(Modifier::BOLD),
+            ),
+            InfoDialogKind::Error => (
+                "Attention",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        };
 
-        let popup = Paragraph::new(lines).block(
-            Block::default()
-                .title("Complete")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green)),
-        );
-        frame.render_widget(popup, popup_area);
+        let popup_block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(border_style);
+        frame.render_widget(popup_block.clone(), popup_area);
+
+        let inner = popup_block.inner(popup_area).inner(&Margin {
+            vertical: 1,
+            horizontal: 2,
+        });
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(4),
+                Constraint::Length(2),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+
+        let message_widget = Paragraph::new(message.to_owned())
+            .wrap(Wrap { trim: false })
+            .alignment(Alignment::Left);
+        frame.render_widget(message_widget, layout[0]);
+
+        let button = Paragraph::new(Line::from(Span::styled(
+            "[ OK ]",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )))
+        .alignment(Alignment::Center);
+        frame.render_widget(button, layout[1]);
+
+        let hint = Paragraph::new("Press Enter to continue.")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        frame.render_widget(hint, layout[2]);
     }
 
     fn render_global_actions(&self, frame: &mut Frame, area: Rect) {

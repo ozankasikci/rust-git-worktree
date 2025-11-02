@@ -1,7 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use color_eyre::{Result, eyre::WrapErr};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::{
+    event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
+};
 use git2::{
     Branch, BranchType, Commit, ErrorCode, Oid, Repository, RepositoryState, Status, StatusOptions,
 };
@@ -17,15 +21,15 @@ use ratatui::{
 use super::{
     Action, EventSource, Focus, Selection, StatusMessage, WorktreeEntry,
     dialog::{
-        CreateDialog, CreateDialogFocus, Dialog, MergeDialog, MergeDialogFocus, RemoveDialog,
-        RemoveDialogFocus,
+        CreateDialog, CreateDialogFocus, Dialog, InfoDialogKind, MergeDialog, MergeDialogFocus,
+        RemoveDialog, RemoveDialogFocus,
     },
     view::{DetailData, DialogView, Snapshot},
 };
 use crate::{
     commands::rm::{LocalBranchStatus, RemoveOutcome},
     editor::LaunchOutcome,
-    telemetry::EditorLaunchStatus,
+    telemetry::{EditorLaunchStatus, log_editor_launch_attempt},
 };
 
 #[allow(dead_code)]
@@ -91,6 +95,13 @@ impl ActionPanelState {
     }
 }
 
+struct EditorLaunchLog {
+    worktree: String,
+    path: PathBuf,
+    status: EditorLaunchStatus,
+    message: String,
+}
+
 pub struct InteractiveCommand<B, E>
 where
     B: Backend,
@@ -108,6 +119,7 @@ where
     pub(crate) default_branch: Option<String>,
     pub(crate) status: Option<StatusMessage>,
     pub(crate) dialog: Option<Dialog>,
+    editor_logs: Vec<EditorLaunchLog>,
 }
 
 impl<B, E> InteractiveCommand<B, E>
@@ -141,6 +153,7 @@ where
             default_branch,
             status: None,
             dialog: None,
+            editor_logs: Vec::new(),
         }
     }
 
@@ -167,6 +180,10 @@ where
         self.terminal
             .show_cursor()
             .wrap_err("failed to show cursor")?;
+
+        for log in std::mem::take(&mut self.editor_logs) {
+            log_editor_launch_attempt(&log.worktree, &log.path, log.status, &log.message);
+        }
 
         result
     }
@@ -567,7 +584,10 @@ where
                         self.dialog = None;
                         return Ok(Some(Selection::RepoRoot));
                     } else {
-                        self.dialog = Some(Dialog::Info { message });
+                        self.dialog = Some(Dialog::Info {
+                            message,
+                            kind: InfoDialogKind::Info,
+                        });
                     }
                 }
                 Err(err) => {
@@ -988,6 +1008,26 @@ where
         }
     }
 
+    fn suspend_terminal(&mut self) -> Result<()> {
+        // Show cursor, leave alternate screen, and disable raw mode
+        // In test environments, these operations may fail, which is okay
+        let _ = self.terminal.show_cursor();
+        let _ = std::io::stdout().execute(LeaveAlternateScreen);
+        let _ = disable_raw_mode();
+        Ok(())
+    }
+
+    fn restore_terminal(&mut self) -> Result<()> {
+        // Re-enable raw mode, enter alternate screen, and hide cursor
+        // In test environments, these operations may fail, which is okay
+        let _ = enable_raw_mode();
+        let _ = std::io::stdout().execute(EnterAlternateScreen);
+        let _ = self.terminal.hide_cursor();
+        // Clear the terminal to ensure a clean redraw
+        let _ = self.terminal.clear();
+        Ok(())
+    }
+
     fn trigger_open_in_editor<H>(
         &mut self,
         on_open_editor: &mut H,
@@ -997,23 +1037,65 @@ where
     where
         H: FnMut(&str, &Path) -> color_eyre::Result<LaunchOutcome>,
     {
-        match on_open_editor(name, path) {
+        // Suspend the terminal before launching the editor
+        self.suspend_terminal()?;
+
+        // Launch the editor and wait for it to complete
+        let result = on_open_editor(name, path);
+
+        // Restore the terminal after the editor exits
+        self.restore_terminal()?;
+
+        match result {
             Ok(outcome) => {
-                let status = match outcome.status {
-                    EditorLaunchStatus::Success | EditorLaunchStatus::PreferenceMissing => {
-                        StatusMessage::info(outcome.message)
+                match outcome.status {
+                    EditorLaunchStatus::Success => {
+                        self.status = Some(StatusMessage::info(outcome.message.clone()));
+                        self.dialog = None;
                     }
-                    _ => StatusMessage::error(outcome.message),
-                };
-                self.status = Some(status);
+                    EditorLaunchStatus::PreferenceMissing => {
+                        self.show_info_popup(outcome.message.clone());
+                    }
+                    _ => {
+                        self.show_error_popup(outcome.message.clone());
+                    }
+                }
+
+                self.editor_logs.push(EditorLaunchLog {
+                    worktree: name.to_string(),
+                    path: path.to_path_buf(),
+                    status: outcome.status,
+                    message: outcome.message,
+                });
             }
             Err(error) => {
-                self.status = Some(StatusMessage::error(format!(
-                    "Failed to open `{name}`: {error}"
-                )));
+                let message = format!("Failed to open `{name}`: {error}");
+                self.show_error_popup(message.clone());
+                self.editor_logs.push(EditorLaunchLog {
+                    worktree: name.to_string(),
+                    path: path.to_path_buf(),
+                    status: EditorLaunchStatus::ConfigurationError,
+                    message,
+                });
             }
         }
         Ok(())
+    }
+
+    fn show_info_popup(&mut self, message: String) {
+        self.status = None;
+        self.dialog = Some(Dialog::Info {
+            message,
+            kind: InfoDialogKind::Info,
+        });
+    }
+
+    fn show_error_popup(&mut self, message: String) {
+        self.status = None;
+        self.dialog = Some(Dialog::Info {
+            message,
+            kind: InfoDialogKind::Error,
+        });
     }
 
     fn move_global_action(&mut self, delta: isize) {
@@ -1090,7 +1172,7 @@ where
                         dialog: dialog.into(),
                     })
             }
-            Some(Dialog::Info { message }) => Some(DialogView::Info { message }),
+            Some(Dialog::Info { message, kind }) => Some(DialogView::Info { message, kind }),
             Some(Dialog::Create(dialog)) => Some(DialogView::Create(dialog.into())),
             Some(Dialog::Merge(dialog)) => {
                 self.worktrees
