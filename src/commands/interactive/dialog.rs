@@ -542,3 +542,47 @@ pub(crate) enum Dialog {
     Create(CreateDialog),
     Merge(MergeDialog),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dialog_info_with_info_kind() {
+        let dialog = Dialog::Info {
+            message: "Test message".to_string(),
+            kind: InfoDialogKind::Info,
+        };
+
+        match dialog {
+            Dialog::Info { message, kind } => {
+                assert_eq!(message, "Test message");
+                assert!(matches!(kind, InfoDialogKind::Info));
+            }
+            _ => panic!("Expected Info dialog"),
+        }
+    }
+
+    #[test]
+    fn dialog_info_with_error_kind() {
+        let dialog = Dialog::Info {
+            message: "Error message".to_string(),
+            kind: InfoDialogKind::Error,
+        };
+
+        match dialog {
+            Dialog::Info { message, kind } => {
+                assert_eq!(message, "Error message");
+                assert!(matches!(kind, InfoDialogKind::Error));
+            }
+            _ => panic!("Expected Info dialog"),
+        }
+    }
+
+    #[test]
+    fn info_dialog_kind_is_copy() {
+        let kind = InfoDialogKind::Info;
+        let _copy = kind;
+        let _another_copy = kind; // Should compile due to Copy trait
+    }
+}

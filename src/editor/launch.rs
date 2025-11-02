@@ -160,4 +160,69 @@ mod tests {
         let outcome = launch_editor(request);
         assert_eq!(outcome.status, EditorLaunchStatus::EditorMissing);
     }
+
+    #[test]
+    fn wait_for_completion_succeeds_with_valid_command() {
+        let dir = TempDir::new().expect("tempdir");
+        let worktree_path = dir.path();
+        let request = LaunchRequest {
+            preference: &EditorPreference {
+                command: OsString::from("true"),
+                args: Vec::new(),
+                source: crate::editor::EditorPreferenceSource::Environment {
+                    variable: crate::editor::EditorEnvVar::Editor,
+                },
+            },
+            worktree_name: "feature",
+            worktree_path,
+            wait_for_completion: true,
+        };
+
+        let outcome = launch_editor(request);
+        assert_eq!(outcome.status, EditorLaunchStatus::Success);
+    }
+
+    #[test]
+    fn wait_for_completion_reports_exit_status() {
+        let dir = TempDir::new().expect("tempdir");
+        let worktree_path = dir.path();
+        let request = LaunchRequest {
+            preference: &EditorPreference {
+                command: OsString::from("false"),
+                args: Vec::new(),
+                source: crate::editor::EditorPreferenceSource::Environment {
+                    variable: crate::editor::EditorEnvVar::Editor,
+                },
+            },
+            worktree_name: "feature",
+            worktree_path,
+            wait_for_completion: true,
+        };
+
+        let outcome = launch_editor(request);
+        assert_eq!(outcome.status, EditorLaunchStatus::SpawnError);
+        assert!(outcome.message.contains("exited with status"));
+    }
+
+    #[test]
+    fn wait_for_completion_reports_missing_command() {
+        let dir = TempDir::new().expect("tempdir");
+        let worktree_path = dir.path();
+        let request = LaunchRequest {
+            preference: &EditorPreference {
+                command: OsString::from("unlikely-editor-command"),
+                args: Vec::new(),
+                source: crate::editor::EditorPreferenceSource::Environment {
+                    variable: crate::editor::EditorEnvVar::Editor,
+                },
+            },
+            worktree_name: "feature",
+            worktree_path,
+            wait_for_completion: true,
+        };
+
+        let outcome = launch_editor(request);
+        assert_eq!(outcome.status, EditorLaunchStatus::EditorMissing);
+        assert!(outcome.message.contains("was not found on PATH"));
+    }
 }
