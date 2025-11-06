@@ -9,7 +9,6 @@ use git2::Repository as GitRepository;
 
 const WORKTREE_IGNORE_ENTRY: &str = ".rsworktree/";
 const WORKTREE_IGNORE_ALT_ENTRY: &str = ".rsworktree";
-const DEFAULT_EDITOR_COMMAND: &str = "vim";
 
 pub struct Repo {
     git: GitRepository,
@@ -71,7 +70,6 @@ impl Repo {
         let dir = self.worktrees_dir();
         fs::create_dir_all(&dir)
             .wrap_err_with(|| eyre::eyre!("failed to create `{}`", dir.display()))?;
-        self.ensure_default_preferences_file(&dir)?;
         Ok(dir)
     }
 
@@ -111,27 +109,6 @@ impl Repo {
 
         Ok(())
     }
-
-    fn ensure_default_preferences_file(&self, dir: &Path) -> color_eyre::Result<()> {
-        let config_path = dir.join(crate::editor::CONFIG_FILE_NAME);
-
-        if config_path.exists() {
-            return Ok(());
-        }
-
-        let contents = serde_json::to_string_pretty(&serde_json::json!({
-            "editor": {
-                "command": DEFAULT_EDITOR_COMMAND
-            }
-        }))
-        .wrap_err("failed to serialize default preferences")?;
-
-        fs::write(&config_path, format!("{contents}\n")).wrap_err_with(|| {
-            eyre::eyre!("failed to write `{}`", config_path.display())
-        })?;
-
-        Ok(())
-    }
 }
 
 fn gitignore_has_entry(contents: &str) -> bool {
@@ -146,7 +123,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    use serde_json::Value;
     use tempfile::TempDir;
 
     fn init_repo(dir: &TempDir) -> color_eyre::Result<Repo> {
@@ -199,45 +175,6 @@ mod tests {
 
         let second = repo.ensure_worktrees_dir()?;
         assert_eq!(first, second);
-
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_worktrees_dir_creates_default_preferences_file() -> color_eyre::Result<()> {
-        let dir = TempDir::new()?;
-        let repo = init_repo(&dir)?;
-
-        repo.ensure_worktrees_dir()?;
-
-        let config_path = repo.worktrees_dir().join(crate::editor::CONFIG_FILE_NAME);
-        let contents = fs::read_to_string(&config_path)?;
-        let parsed: Value = serde_json::from_str(&contents)?;
-
-        assert_eq!(
-            parsed
-                .get("editor")
-                .and_then(|value| value.get("command"))
-                .and_then(Value::as_str),
-            Some(DEFAULT_EDITOR_COMMAND)
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_worktrees_dir_preserves_existing_preferences_file() -> color_eyre::Result<()> {
-        let dir = TempDir::new()?;
-        let repo = init_repo(&dir)?;
-        let worktrees_dir = repo.worktrees_dir();
-        fs::create_dir_all(&worktrees_dir)?;
-        let config_path = worktrees_dir.join(crate::editor::CONFIG_FILE_NAME);
-        fs::write(&config_path, r#"{"editor":{"command":"code"}}"#)?;
-
-        repo.ensure_worktrees_dir()?;
-
-        let contents = fs::read_to_string(&config_path)?;
-        assert_eq!(contents, r#"{"editor":{"command":"code"}}"#);
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, io, path::Path, process::Command};
+use std::{ffi::OsStr, io, path::Path, process::{Command, Stdio}};
 
 use crate::telemetry::EditorLaunchStatus;
 
@@ -78,6 +78,11 @@ pub fn launch_editor(request: LaunchRequest<'_>) -> LaunchOutcome {
         }
     } else {
         // For non-interactive mode: spawn in background
+        // Detach stdio to prevent blocking parent process
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+
         match command.spawn() {
             Ok(_) => LaunchOutcome {
                 status: EditorLaunchStatus::Success,
