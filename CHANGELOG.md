@@ -4,8 +4,10 @@ All notable changes to this project will be documented in this file. This format
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-12-02
+
 ### Added
-- Add an “Open in Editor” action in the interactive UI and a `rsworktree worktree open-editor` CLI command, including guidance when no editor is configured.
+- Add an "Open in Editor" action in the interactive UI and a `rsworktree worktree open-editor` CLI command, including guidance when no editor is configured.
 
 ## [0.6.4] - 2025-10-10
 
