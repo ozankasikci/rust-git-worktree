@@ -376,4 +376,125 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn parses_create_command_with_base() {
+        let cli = Cli::try_parse_from(["rsworktree", "create", "feature/test", "--base", "develop"])
+            .expect("create with base should parse");
+        match cli.command {
+            Commands::Create(args) => {
+                assert_eq!(args.name, "feature/test");
+                assert_eq!(args.base, Some("develop".into()));
+            }
+            _ => panic!("expected Create command"),
+        }
+    }
+
+    #[test]
+    fn parses_cd_command_with_print_flag() {
+        let cli = Cli::try_parse_from(["rsworktree", "cd", "my-worktree", "--print"])
+            .expect("cd with print should parse");
+        match cli.command {
+            Commands::Cd(args) => {
+                assert_eq!(args.name, "my-worktree");
+                assert!(args.print);
+            }
+            _ => panic!("expected Cd command"),
+        }
+    }
+
+    #[test]
+    fn parses_rm_command_with_force_flag() {
+        let cli = Cli::try_parse_from(["rsworktree", "rm", "old-worktree", "--force"])
+            .expect("rm with force should parse");
+        match cli.command {
+            Commands::Rm(args) => {
+                assert_eq!(args.name, "old-worktree");
+                assert!(args.force);
+            }
+            _ => panic!("expected Rm command"),
+        }
+    }
+
+    #[test]
+    fn parses_pr_github_with_all_flags() {
+        let cli = Cli::try_parse_from([
+            "rsworktree",
+            "pr-github",
+            "my-feature",
+            "--no-push",
+            "--draft",
+            "--fill",
+            "--web",
+            "--remote",
+            "upstream",
+            "--reviewer",
+            "alice",
+            "--reviewer",
+            "bob",
+            "--",
+            "--label",
+            "bug",
+        ])
+        .expect("pr-github with all flags should parse");
+        match cli.command {
+            Commands::PrGithub(args) => {
+                assert_eq!(args.name, Some("my-feature".into()));
+                assert!(args.no_push);
+                assert!(args.draft);
+                assert!(args.fill);
+                assert!(args.web);
+                assert_eq!(args.remote, "upstream");
+                assert_eq!(args.reviewers, vec!["alice", "bob"]);
+                assert_eq!(args.extra, vec!["--label", "bug"]);
+            }
+            _ => panic!("expected PrGithub command"),
+        }
+    }
+
+    #[test]
+    fn parses_merge_pr_github_with_remove_flag() {
+        let cli = Cli::try_parse_from(["rsworktree", "merge-pr-github", "feature", "--remove"])
+            .expect("merge-pr-github with remove should parse");
+        match cli.command {
+            Commands::MergePrGithub(args) => {
+                assert_eq!(args.name, Some("feature".into()));
+                assert!(args.remove_remote);
+            }
+            _ => panic!("expected MergePrGithub command"),
+        }
+    }
+
+    #[test]
+    fn parses_worktree_open_editor_by_name() {
+        let cli = Cli::try_parse_from(["rsworktree", "worktree", "open-editor", "feature/test"])
+            .expect("worktree open-editor by name should parse");
+        match cli.command {
+            Commands::Worktree(WorktreeCommands::OpenEditor(args)) => {
+                assert_eq!(args.name, Some("feature/test".into()));
+                assert!(args.path.is_none());
+            }
+            _ => panic!("expected Worktree OpenEditor command"),
+        }
+    }
+
+    #[test]
+    fn parses_worktree_open_editor_by_path() {
+        let cli =
+            Cli::try_parse_from(["rsworktree", "worktree", "open-editor", "--path", "/some/path"])
+                .expect("worktree open-editor by path should parse");
+        match cli.command {
+            Commands::Worktree(WorktreeCommands::OpenEditor(args)) => {
+                assert!(args.name.is_none());
+                assert_eq!(args.path, Some(PathBuf::from("/some/path")));
+            }
+            _ => panic!("expected Worktree OpenEditor command"),
+        }
+    }
+
+    #[test]
+    fn parses_ls_command() {
+        let cli = Cli::try_parse_from(["rsworktree", "ls"]).expect("ls should parse");
+        assert!(matches!(cli.command, Commands::Ls));
+    }
 }

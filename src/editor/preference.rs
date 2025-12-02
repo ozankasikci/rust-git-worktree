@@ -240,4 +240,155 @@ mod tests {
             EditorPreferenceResolution::Missing(PreferenceMissingReason::NotConfigured)
         ));
     }
+
+    #[test]
+    fn config_invalid_when_json_malformed() {
+        let dir = TempDir::new().expect("tempdir");
+        let repo = init_repo(&dir);
+        let worktrees_dir = repo.ensure_worktrees_dir().expect("worktrees dir");
+        let config_path = worktrees_dir.join(CONFIG_FILE_NAME);
+
+        fs::write(&config_path, "{ invalid json }").expect("write config");
+
+        match resolve_editor_preference(&repo).expect("resolution") {
+            EditorPreferenceResolution::Missing(PreferenceMissingReason::ConfigInvalid {
+                path,
+                error,
+            }) => {
+                assert_eq!(path, config_path);
+                assert!(error.contains("expected") || error.contains("key"));
+            }
+            other => panic!("expected ConfigInvalid, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_invalid_when_command_empty() {
+        let dir = TempDir::new().expect("tempdir");
+        let repo = init_repo(&dir);
+        let worktrees_dir = repo.ensure_worktrees_dir().expect("worktrees dir");
+        let config_path = worktrees_dir.join(CONFIG_FILE_NAME);
+
+        let json = serde_json::json!({
+            "editor": {
+                "command": "   ",
+                "args": []
+            }
+        });
+        fs::write(&config_path, serde_json::to_vec(&json).unwrap()).expect("write config");
+
+        match resolve_editor_preference(&repo).expect("resolution") {
+            EditorPreferenceResolution::Missing(PreferenceMissingReason::ConfigInvalid {
+                error,
+                ..
+            }) => {
+                assert!(error.contains("must not be empty"));
+            }
+            other => panic!("expected ConfigInvalid, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_with_no_editor_key_falls_through() {
+        let dir = TempDir::new().expect("tempdir");
+        let repo = init_repo(&dir);
+        let worktrees_dir = repo.ensure_worktrees_dir().expect("worktrees dir");
+        let config_path = worktrees_dir.join(CONFIG_FILE_NAME);
+
+        let json = serde_json::json!({
+            "other_setting": true
+        });
+        fs::write(&config_path, serde_json::to_vec(&json).unwrap()).expect("write config");
+
+        let resolution = resolve_editor_preference(&repo).expect("resolution");
+        assert!(matches!(
+            resolution,
+            EditorPreferenceResolution::Missing(PreferenceMissingReason::NotConfigured)
+        ));
+    }
+
+    #[test]
+    fn load_from_env_parses_command_with_args() {
+        let result = load_from_env_value("vim -u NONE", EditorEnvVar::Editor);
+        match result {
+            Ok(Some(pref)) => {
+                assert_eq!(pref.command, OsString::from("vim"));
+                assert_eq!(pref.args, vec![OsString::from("-u"), OsString::from("NONE")]);
+            }
+            other => panic!("expected Some preference, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_from_env_handles_quoted_args() {
+        let result = load_from_env_value(r#"code --wait --new-window"#, EditorEnvVar::Visual);
+        match result {
+            Ok(Some(pref)) => {
+                assert_eq!(pref.command, OsString::from("code"));
+                assert_eq!(
+                    pref.args,
+                    vec![OsString::from("--wait"), OsString::from("--new-window")]
+                );
+            }
+            other => panic!("expected Some preference, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_from_env_returns_none_for_empty() {
+        let result = load_from_env_value("", EditorEnvVar::Editor);
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[test]
+    fn load_from_env_returns_none_for_whitespace_only() {
+        let result = load_from_env_value("   ", EditorEnvVar::Editor);
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[test]
+    fn load_from_env_errors_on_unclosed_quote() {
+        let result = load_from_env_value(r#"vim "unclosed"#, EditorEnvVar::Editor);
+        match result {
+            Err(PreferenceMissingReason::EnvInvalid { variable, error }) => {
+                assert_eq!(variable, EditorEnvVar::Editor);
+                assert!(!error.is_empty());
+            }
+            other => panic!("expected EnvInvalid, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn editor_env_var_name_returns_correct_strings() {
+        assert_eq!(EditorEnvVar::Editor.name(), "EDITOR");
+        assert_eq!(EditorEnvVar::Visual.name(), "VISUAL");
+    }
+
+    fn load_from_env_value(
+        value: &str,
+        variable: EditorEnvVar,
+    ) -> Result<Option<EditorPreference>, PreferenceMissingReason> {
+        if value.is_empty() {
+            return Ok(None);
+        }
+
+        let parts = shell_words::split(value).map_err(|error| PreferenceMissingReason::EnvInvalid {
+            variable,
+            error: error.to_string(),
+        })?;
+
+        if parts.is_empty() {
+            return Ok(None);
+        }
+
+        let mut parts_iter = parts.into_iter();
+        let command = parts_iter.next().unwrap();
+        let args = parts_iter.map(OsString::from).collect::<Vec<_>>();
+
+        Ok(Some(EditorPreference {
+            command: OsString::from(command),
+            args,
+            source: EditorPreferenceSource::Environment { variable },
+        }))
+    }
 }

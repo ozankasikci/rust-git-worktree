@@ -145,3 +145,111 @@ impl Drop for EnvGuard {
         }
     }
 }
+
+#[test]
+fn open_editor_with_path_flag() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+    create_worktree(repo_dir.path(), "feature/pathtest")?;
+
+    let worktree_path = repo_dir.path().join(".rsworktree/feature/pathtest");
+    let editor_cmd = "/usr/bin/env true";
+    let guard = EnvGuard::set("EDITOR", editor_cmd);
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args([
+            "worktree",
+            "open-editor",
+            "--path",
+            worktree_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Opened"));
+
+    drop(guard);
+    Ok(())
+}
+
+#[test]
+fn open_editor_errors_when_path_does_not_exist() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["worktree", "open-editor", "--path", "/nonexistent/path"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+
+    Ok(())
+}
+
+#[test]
+fn open_editor_matches_partial_name() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+    create_worktree(repo_dir.path(), "feature/unique-name")?;
+
+    let editor_cmd = "/usr/bin/env true";
+    let guard = EnvGuard::set("EDITOR", editor_cmd);
+
+    // Match by last segment
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["worktree", "open-editor", "unique-name"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("feature/unique-name"));
+
+    drop(guard);
+    Ok(())
+}
+
+#[test]
+fn open_editor_errors_on_ambiguous_name() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+    create_worktree(repo_dir.path(), "feature/shared")?;
+    create_worktree(repo_dir.path(), "bugfix/shared")?;
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["worktree", "open-editor", "shared"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ambiguous"));
+
+    Ok(())
+}
+
+#[test]
+fn open_editor_uses_preferences_file() -> Result<(), Box<dyn Error>> {
+    let repo_dir = TempDir::new()?;
+    init_git_repo(repo_dir.path())?;
+    create_worktree(repo_dir.path(), "feature/prefs")?;
+
+    // Create preferences file
+    let prefs_dir = repo_dir.path().join(".rsworktree");
+    fs::create_dir_all(&prefs_dir)?;
+    fs::write(
+        prefs_dir.join("preferences.json"),
+        r#"{"editor": {"command": "/usr/bin/env", "args": ["true"]}}"#,
+    )?;
+
+    let guard_editor = EnvGuard::remove("EDITOR");
+    let guard_visual = EnvGuard::remove("VISUAL");
+
+    Command::cargo_bin("rsworktree")?
+        .current_dir(repo_dir.path())
+        .args(["worktree", "open-editor", "feature/prefs"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Opened"));
+
+    drop(guard_visual);
+    drop(guard_editor);
+    Ok(())
+}
