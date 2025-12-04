@@ -946,6 +946,10 @@ where
             Focus::GlobalActions => {
                 if self.global_action_selected > 0 {
                     self.move_global_action(-1);
+                } else if !self.worktrees.is_empty() {
+                    self.focus = Focus::Worktrees;
+                    self.selected = Some(self.worktrees.len().saturating_sub(1));
+                    self.sync_selection(state);
                 }
             }
         }
@@ -961,8 +965,16 @@ where
                     }
                     return;
                 }
+                let last_index = self.worktrees.len().saturating_sub(1);
+                if matches!(self.selected, Some(idx) if idx >= last_index)
+                    && !super::GLOBAL_ACTIONS.is_empty()
+                {
+                    self.focus = Focus::GlobalActions;
+                    self.global_action_selected = 0;
+                    return;
+                }
                 let next = match self.selected {
-                    Some(idx) => (idx + 1) % self.worktrees.len(),
+                    Some(idx) => idx + 1,
                     None => 0,
                 };
                 self.selected = Some(next);
