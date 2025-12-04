@@ -945,3 +945,323 @@ fn scroll_with_multiple_groups() {
     // Verify we can find the selected line
     assert!(dialog.find_selected_line().is_some());
 }
+
+#[test]
+fn down_from_last_worktree_moves_to_global_actions() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    // Down twice to reach last worktree, then Down again to GlobalActions, then Enter
+    let events = StubEvents::new(vec![
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Down), // Now at GlobalActions (Create worktree)
+        key(KeyCode::Down), // Move to Cd to root dir
+        key(KeyCode::Enter),
+    ]);
+
+    let worktrees = entries(&["alpha", "beta", "gamma"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+        noop_open_editor(),
+    )?;
+
+    assert_eq!(result, Some(Selection::RepoRoot));
+
+    Ok(())
+}
+
+#[test]
+fn up_from_first_global_action_moves_to_last_worktree() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    // Up to GlobalActions (lands on last), Up to first GlobalAction, Up again to last worktree
+    let events = StubEvents::new(vec![
+        key(KeyCode::Up),   // From first worktree to GlobalActions (Cd to root dir)
+        key(KeyCode::Up),   // To Create worktree
+        key(KeyCode::Up),   // Back to last worktree (gamma)
+        key(KeyCode::Enter),
+    ]);
+
+    let worktrees = entries(&["alpha", "beta", "gamma"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+        noop_open_editor(),
+    )?;
+
+    assert_eq!(result, Some(Selection::Worktree(String::from("gamma"))));
+
+    Ok(())
+}
+
+#[test]
+fn down_navigates_within_global_actions() -> Result<()> {
+    let backend = TestBackend::new(60, 18);
+    let terminal = Terminal::new(backend)?;
+    // Go to GlobalActions via down from last worktree, then navigate within GlobalActions
+    let events = StubEvents::new(vec![
+        key(KeyCode::Down), // alpha -> beta
+        key(KeyCode::Down), // beta -> gamma
+        key(KeyCode::Down), // gamma -> Create worktree (first GlobalAction)
+        key(KeyCode::Enter), // Open create dialog
+        char_key('t'),
+        char_key('e'),
+        char_key('s'),
+        char_key('t'),
+        key(KeyCode::Tab),
+        key(KeyCode::Tab),
+        key(KeyCode::Enter),
+        key(KeyCode::Enter),
+    ]);
+
+    let worktrees = entries(&["alpha", "beta", "gamma"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut created = Vec::new();
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |name, base| {
+            created.push((name.to_string(), base.map(|b| b.to_string())));
+            Ok(())
+        },
+        noop_open_editor(),
+    )?;
+
+    assert_eq!(result, Some(Selection::Worktree(String::from("test"))));
+    assert_eq!(
+        created,
+        vec![(String::from("test"), Some(String::from("main")))]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn vim_keys_navigate_worktrees() -> Result<()> {
+    let backend = TestBackend::new(40, 10);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        char_key('j'), // Down to beta
+        char_key('j'), // Down to gamma
+        char_key('k'), // Up to beta
+        key(KeyCode::Enter),
+    ]);
+    let worktrees = entries(&["alpha", "beta", "gamma"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let selection = command
+        .run(
+            |_, _| {
+                Ok(RemoveOutcome {
+                    local_branch: None,
+                    repositioned: false,
+                })
+            },
+            |_, _| panic!("create should not be called"),
+            noop_open_editor(),
+        )?
+        .expect("expected selection");
+    assert_eq!(selection, Selection::Worktree(String::from("beta")));
+
+    Ok(())
+}
+
+#[test]
+fn left_right_navigate_actions_panel() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),   // Focus on Actions (starts at Open)
+        key(KeyCode::Right), // Move right: Open -> OpenInEditor
+        key(KeyCode::Right), // Move right: OpenInEditor -> Remove
+        key(KeyCode::Left),  // Move left: Remove -> OpenInEditor
+        key(KeyCode::Enter), // Select OpenInEditor action
+        key(KeyCode::Esc),   // Exit after editor opens
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut editor_opened = false;
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+        |_, _| {
+            editor_opened = true;
+            Ok(LaunchOutcome {
+                status: EditorLaunchStatus::Success,
+                message: String::new(),
+            })
+        },
+    )?;
+
+    assert!(editor_opened, "editor should have been opened");
+    assert!(result.is_none());
+
+    Ok(())
+}
+
+#[test]
+fn q_key_exits_interactive_mode() -> Result<()> {
+    let backend = TestBackend::new(40, 10);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![char_key('q')]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| panic!("create should not be called"),
+        noop_open_editor(),
+    )?;
+
+    assert!(result.is_none(), "q should exit without selection");
+
+    Ok(())
+}
+
+#[test]
+fn e_key_opens_editor_directly() -> Result<()> {
+    let backend = TestBackend::new(40, 10);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![char_key('e'), key(KeyCode::Esc)]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let mut editor_calls = Vec::new();
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+        |name, path| {
+            editor_calls.push((name.to_string(), path.to_path_buf()));
+            Ok(LaunchOutcome {
+                status: EditorLaunchStatus::Success,
+                message: String::new(),
+            })
+        },
+    )?;
+
+    assert_eq!(editor_calls.len(), 1);
+    assert_eq!(editor_calls[0].0, "alpha");
+    assert!(result.is_none());
+
+    Ok(())
+}
+
+#[test]
+fn backtab_cycles_focus_backward() -> Result<()> {
+    let backend = TestBackend::new(40, 12);
+    let terminal = Terminal::new(backend)?;
+    let events = StubEvents::new(vec![
+        key(KeyCode::Tab),     // Worktrees -> Actions
+        key(KeyCode::BackTab), // Actions -> Worktrees
+        key(KeyCode::Enter),   // Select worktree
+    ]);
+    let worktrees = entries(&["alpha"]);
+    let command = InteractiveCommand::new(
+        terminal,
+        events,
+        PathBuf::from("/tmp/worktrees"),
+        worktrees,
+        vec![String::from("main")],
+        Some(String::from("main")),
+    );
+
+    let result = command.run(
+        |_, _| {
+            Ok(RemoveOutcome {
+                local_branch: None,
+                repositioned: false,
+            })
+        },
+        |_, _| Ok(()),
+        noop_open_editor(),
+    )?;
+
+    assert_eq!(result, Some(Selection::Worktree(String::from("alpha"))));
+
+    Ok(())
+}

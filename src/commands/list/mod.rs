@@ -149,4 +149,60 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn find_worktrees_returns_empty_for_empty_dir() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let worktrees_dir = repo.ensure_worktrees_dir()?;
+
+        let found = find_worktrees(&worktrees_dir)?;
+        assert!(found.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn format_worktree_handles_single_component() {
+        let path = PathBuf::from("feature");
+        assert_eq!(format_worktree(&path), "feature");
+    }
+
+    #[test]
+    fn format_worktree_handles_nested_path() {
+        let path = PathBuf::from("feature/deep/nested");
+        assert_eq!(format_worktree(&path), "feature/deep/nested");
+    }
+
+    #[test]
+    fn list_command_execute_shows_worktrees() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let worktrees_dir = repo.ensure_worktrees_dir()?;
+
+        let worktree = worktrees_dir.join("my-feature");
+        fs::create_dir_all(&worktree)?;
+        fs::write(worktree.join(".git"), "gitdir: ..")?;
+
+        let cmd = ListCommand;
+        // Just verify it doesn't error - output goes to stdout
+        cmd.execute(&repo)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn list_command_execute_handles_empty() -> color_eyre::Result<()> {
+        let repo_dir = TempDir::new()?;
+        init_git_repo(&repo_dir)?;
+        let repo = Repo::discover_from(repo_dir.path())?;
+        let _worktrees_dir = repo.ensure_worktrees_dir()?;
+
+        let cmd = ListCommand;
+        cmd.execute(&repo)?;
+
+        Ok(())
+    }
 }
