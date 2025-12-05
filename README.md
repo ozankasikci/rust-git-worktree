@@ -1,6 +1,11 @@
 # rsworktree
 
+[![Crates.io](https://img.shields.io/crates/v/rsworktree.svg)](https://crates.io/crates/rsworktree)
+[![Downloads](https://img.shields.io/crates/d/rsworktree.svg)](https://crates.io/crates/rsworktree)
+[![License](https://img.shields.io/crates/l/rsworktree.svg)](https://github.com/ozankasikci/rust-git-worktree/blob/master/LICENSE)
 [![Codecov](https://codecov.io/gh/ozankasikci/rust-git-worktree/branch/master/graph/badge.svg)](https://codecov.io/gh/ozankasikci/rust-git-worktree)
+[![CI](https://github.com/ozankasikci/rust-git-worktree/actions/workflows/coverage.yml/badge.svg)](https://github.com/ozankasikci/rust-git-worktree/actions/workflows/coverage.yml)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-blue.svg)](https://www.rust-lang.org)
 
 `rsworktree` is a Rust CLI for managing Git worktrees in a single repo-local directory (`.rsworktree`). It provides a focused, ergonomic workflow for creating, jumping into, listing, and removing worktrees without leaving the terminal.
 
